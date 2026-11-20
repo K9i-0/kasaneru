@@ -169,14 +169,14 @@ node bin/kasaneru.mjs inspect out/basic.mp4
 
 - **音量のキーフレームのコマは、動画全体のコマ番号**（トラックの頭からではない）。`from: 30` のトラックに `[[0, 0], [60, 1]]` と書くと、鳴り始めの30コマ目ですでに0.5になっている。video層の `offsetX` などのキーフレームは「クリップ先頭から」なので、数え方が違う
 - キーフレームは何点あってもよい（コマごとに1点でも書き出せる）。直線上に並ぶ点は自動で省く
-- **モノラルの素材は、左右へ1倍ずつ入る。** ffmpegの既定の変換（`-ac 2`、左右へ0.707倍ずつ）より3dB大きい。モノラルの声とステレオのBGMを混ぜた動画を他のツールから移すと、声だけが3dB上がってバランスが変わる（実測で全体が -15.6 LUFS → -12.6 LUFS）。合わせるなら、モノラルのトラックの `volume` に0.707を掛ける（キーフレームなら各値に掛ける）
+- **モノラルの素材は、左右へ1倍ずつ入る。** ffmpegの既定の変換（`-ac 2`、左右へ0.707倍ずつ）より3dB大きい。モノラルの声とステレオのBGMを混ぜると、ffmpegの既定の変換で混ぜたときより声だけが3dB大きくなる（実測で全体が -15.6 LUFS → -12.6 LUFS）。ffmpegの既定に合わせるなら、モノラルのトラックの `volume` に0.707を掛ける（キーフレームなら各値に掛ける）
 
 キーフレームは `{"keyframes": [[コマ, 値], ...], "easing": "linear"}`。`easing` は `linear` `inCubic` `outCubic` `inOutCubic`。
 
 ## シーンの書き方
 
 - **HTML/React（`scenes.browser`）**: `render(frame, props)` がHTML文字列を返す。`key(frame, props)` は省略でき、その場合は返したHTMLが同じコマを同じ絵として扱う。`.tsx` はそのまま読める（Reactは `renderToStaticMarkup` でHTMLにする）
-  - **フック**: 1コマごとに1回描くだけなので、状態と副作用のフックは働かない（`useState` は初期値のまま、`useEffect` は走らない）。`useContext` `useMemo` のように描く間に値を返すだけのものは使える。フレームをContextで配っている既存のコードは、`render` の中でProviderに包めばそのまま移せる
+  - **フック**: 1コマごとに1回描くだけなので、状態と副作用のフックは働かない（`useState` は初期値のまま、`useEffect` は走らない）。`useContext` `useMemo` のように描く間に値を返すだけのものは使える。フレームをContextで配るコードは、`render` の中でProviderに包めば描ける
   - **Reactは1つだけ**: シーンの `react` と `react-dom` は、シーンを置いた場所の `node_modules` から探し、なければkasaneruのものを使う。片方だけがシーン側にあるなど、`react` と `react-dom` が別々の場所から読まれるとReactが2つになり、Contextが壊れる（Providerの値が届かない）。両方とも同じ `node_modules` から読まれるようにする
   - **素材のURL**: ページは `file://` で開き、相対パスの基準（`<base>`）はシーンのファイルがあるフォルダ。`images/a.png` のような相対パスか `file://` のURLで書く。`/images/a.png` のように `/` で始めるとディスクの根を指すので読めない（「読めない素材」として失敗になる）
 - **ページ内スクリプト（`scenes.page`）**: `setup(ctx)` を1回、`draw(frame)` をコマごとに呼ぶ。素材は `ctx.assets`（manifestの `assets` のURL）から読む
