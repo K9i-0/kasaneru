@@ -1,5 +1,5 @@
-// kasaneruのFlutter描画バックエンドの実行部分。環境変数KASANERU_JOBのジョブを読み、シーンを透過PNGへ書き出す。
-// シーンは作品側のDartファイルにあり、生成された入口（test/generated/）がそれを読み込んでここへ渡す。
+// The runner of the kasaneru Flutter rendering backend. Reads the job in the environment variable KASANERU_JOB and renders scenes to transparent PNGs.
+// Scenes live in a Dart file on the project side; the generated entry point (test/generated/) loads it and passes it here.
 import 'dart:convert';
 import 'dart:io';
 import 'dart:ui' as ui;
@@ -17,7 +17,7 @@ void runKasaneruJob(Map<String, KasaneruScene> scenes) {
   final fonts = (job['fonts'] as List).cast<Map<String, dynamic>>();
 
   setUpAll(() async {
-    // flutter testは既定で全ての文字が四角になるため、使うフォントを明示的に読み込む。
+    // By default flutter test draws every character as a box, so load the fonts in use explicitly.
     for (final font in fonts) {
       final bytes = File(font['file'] as String).readAsBytesSync();
       final loader = FontLoader(font['family'] as String)..addFont(Future.value(ByteData.sublistView(bytes)));
@@ -42,11 +42,11 @@ void runKasaneruJob(Map<String, KasaneruScene> scenes) {
     final watch = Stopwatch()..start();
 
     Future<void> draw(Widget? child, String file, Map<String, dynamic>? region, Map<String, dynamic>? canvas) async {
-      // canvasを指定した層は、その大きさの画面に描く（横に長い帯など）。
+      // A layer with canvas is drawn on a screen of that size (a horizontally long bar, for example).
       final cw = (canvas?['width'] as num?)?.toDouble() ?? width;
       final ch = (canvas?['height'] as num?)?.toDouble() ?? height;
       tester.view.physicalSize = Size(cw, ch);
-      // regionを指定した層は、その範囲だけを切り出して描く。
+      // A layer with region draws only that area, cropped out.
       final rx = (region?['x'] as num?)?.toDouble() ?? 0;
       final ry = (region?['y'] as num?)?.toDouble() ?? 0;
       final rw = (region?['width'] as num?)?.toDouble() ?? cw;
@@ -95,7 +95,7 @@ void runKasaneruJob(Map<String, KasaneruScene> scenes) {
     final result = <String, dynamic>{};
     try {
       for (final layer in (job['layers'] as List).cast<Map<String, dynamic>>()) {
-        final scene = scenes[layer['scene']] ?? (throw StateError('シーン「${layer['scene']}」がありません。あるのは: ${scenes.keys.join(', ')}'));
+        final scene = scenes[layer['scene']] ?? (throw StateError('Scene "${layer['scene']}" not found. Available: ${scenes.keys.join(', ')}'));
         final region = layer['region'] as Map<String, dynamic>?;
         final canvas = layer['canvas'] as Map<String, dynamic>?;
         final dir = Directory('$workDir/${layer['id']}')..createSync(recursive: true);

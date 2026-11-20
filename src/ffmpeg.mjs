@@ -1,5 +1,5 @@
-// manifestからffmpegのフィルタを組み立てる。
-// 合成はYUV 4:2:0（BT.709・リミテッドレンジ）で行う。色変換の行列は入力ごとに明示する。
+// Builds the ffmpeg filter from the manifest.
+// Compositing is done in YUV 4:2:0 (BT.709, limited range). The color conversion matrix is stated explicitly for each input.
 import {execFileSync, spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {writeFileSync} from 'node:fs';
@@ -8,7 +8,7 @@ import {interpolate} from './anim.mjs';
 import {cubeLut, parseFilter} from './cssfilter.mjs';
 
 const SAMPLE_RATE = 48000;
-// swscaleの既定の丸めでは、色行列の変換（BT.601→BT.709）で輝度が2段ずれる。正確な丸めを必ず指定する。
+// With the default rounding of swscale, the color matrix conversion (BT.601→BT.709) shifts luma by 2 levels. Always request accurate rounding.
 const ACCURATE = 'accurate_rnd+full_chroma_int';
 const TO_WORK = `out_color_matrix=bt709:out_range=tv:flags=bicubic+${ACCURATE}`;
 const IMAGE = /\.(png|jpe?g|webp|bmp|gif)$/i;
@@ -22,14 +22,14 @@ export function probe(file) {
   return probeCache.get(file);
 }
 
-// 色空間のタグがない動画は、慣例どおり高さ720未満をBT.601、それ以上をBT.709として読む。
+// Video without a color space tag is read, by convention, as BT.601 when the height is under 720 and as BT.709 otherwise.
 function inputMatrix(file) {
   const v = probe(file).find((s) => s.codec_type === 'video');
   const tagged = {bt709: 'bt709', bt470bg: 'bt601', smpte170m: 'bt601'}[v?.color_space];
   return tagged ?? ((v?.height ?? 0) >= 720 ? 'bt709' : 'bt601');
 }
 
-// 透過つきの素材（透過PNG・WebP、アルファつきの動画）かどうか。
+// Whether the asset has transparency (transparent PNG / WebP, video with alpha).
 function inputHasAlpha(file) {
   const v = probe(file).find((s) => s.codec_type === 'video');
   return /^(rgba|bgra|argb|abgr|ya\d|yuva|gbrap|pal8)/.test(v?.pix_fmt ?? '');
@@ -48,13 +48,13 @@ const EASINGS = {
 };
 export const easingNames = Object.keys(EASINGS);
 
-// [[frame, value], ...] を、変数nについてのffmpegの式にする。範囲外は端の値で止まる。
-// 区間を半分ずつに分けて if を入れ子にする。先頭から順に入れ子にすると、ffmpegの式は100点ほどで深さの上限に当たる。
+// Turns [[frame, value], ...] into an ffmpeg expression in the variable n. Outside the range it holds the end value.
+// Splits the span in halves and nests the ifs. Nesting in order from the first keyframe hits the depth limit of ffmpeg expressions at around 100 points.
 export function keyframeExpr(keyframes, easing = 'linear', n = 'n') {
   const ease = EASINGS[easing];
   if (!ease) throw new Error(`unknown easing: ${easing}`);
   if (keyframes.length === 1) return String(keyframes[0][1]);
-  // lo〜hi番目の区間（区間iは keyframes[i] から keyframes[i+1] まで）を受け持つ式。
+  // The expression covering segments lo to hi (segment i runs from keyframes[i] to keyframes[i+1]).
   const build = (lo, hi) => {
     if (hi - lo === 1) {
       const [f0, v0] = keyframes[lo];
@@ -67,8 +67,8 @@ export function keyframeExpr(keyframes, easing = 'linear', n = 'n') {
   return build(0, keyframes.length - 1);
 }
 
-// 直線でつなぐキーフレームから、前後の点を結ぶ直線の上にある点を省く（結果は変わらない）。
-// コマごとに1点のような細かいキーフレームでも、ffmpegへ渡す式が長くなりすぎないようにする。
+// From keyframes joined by straight lines, drop the points that lie on the line through their neighbors (the result does not change).
+// Keeps the expression passed to ffmpeg from getting too long even with dense keyframes, such as one point per frame.
 export function thinKeyframes(keyframes) {
   const out = [];
   for (const k of keyframes) {
@@ -83,7 +83,7 @@ export function thinKeyframes(keyframes) {
   return out;
 }
 
-// CSSのmix-blend-modeの名前 → ffmpegのblendの名前
+// CSS mix-blend-mode name → ffmpeg blend name
 export const BLEND_MODES = {
   multiply: 'multiply', screen: 'screen', overlay: 'overlay', darken: 'darken', lighten: 'lighten', difference: 'difference', exclusion: 'exclusion',
   'hard-light': 'hardlight', 'soft-light': 'softlight', 'color-dodge': 'dodge', 'color-burn': 'burn', 'plus-lighter': 'addition',
@@ -91,7 +91,7 @@ export const BLEND_MODES = {
 
 const isKeyframed = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
-// 速度変更。atempoは1回あたり0.5〜2倍なので、範囲外は重ねがけする。
+// Speed change. One atempo covers 0.5x to 2x, so chain several for values outside that range.
 function atempoChain(rate) {
   const parts = [];
   let r = rate;
@@ -112,7 +112,7 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
   const addInput = (...args) => { inputs.push(...args); return inputCount++; };
   const next = () => `b${++step}`;
   const sec = (frames) => (frames / fps).toFixed(6);
-  // コマの区間を時刻の条件にする。境界は半コマ手前に置き、丸め誤差で1コマずれないようにする。
+  // Turns a span of frames into a condition on time. Boundaries sit half a frame early so that rounding error does not shift them by one frame.
   const during = (from, to) => `gte(t,${((from - 0.5) / fps).toFixed(6)})*lt(t,${((to - 0.5) / fps).toFixed(6)})`;
 
   const bg = (manifest.background ?? '#000000').replace('#', '0x');
@@ -132,23 +132,23 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
   const FROM_WORK = `in_color_matrix=bt709:in_range=tv:flags=bicubic+${ACCURATE}`;
   let uid = 0;
 
-  // srcを今の絵の上に重ねる。位置が動くものは4:4:4で重ねる（4:2:0のままだと位置が2px単位に丸められる）。
-  // blendを指定すると、CSSのmix-blend-modeと同じく、下の絵とsRGBのまま掛け合わせてから重ねる。
+  // Overlays src on the current picture. Anything whose position moves is overlaid in 4:4:4 (in 4:2:0 the position is rounded to 2 px steps).
+  // With blend, as in CSS mix-blend-mode, src is blended with the picture below in sRGB and then overlaid.
   const overlay = (src, x, y, {moving = false, enable = null, eof = 'repeat', blend = null} = {}) => {
     const n = next();
     const opts = `x=${x}:y=${y}:eof_action=${eof}${enable ? `:enable='${enable}'` : ''}`;
     if (blend) {
       const k = ++uid;
       graph.push(
-        // 1. srcを、全体と同じ大きさ・長さの透明な絵の上に置く（出ていない時間は透明になる）。
+        // 1. Place src on a transparent picture of the same size and length as the whole composition (it is transparent while src is not shown).
         `color=black@0:s=${W}x${H}:r=${fps}:d=${sec(N)},format=yuva420p[bt${k}]`,
         `[bt${k}][${src}]overlay=${opts}:format=auto,format=yuva420p,split[bs${k}][ba${k}]`,
-        // 2. 下の絵とsrcをRGBにして掛け合わせる。
+        // 2. Convert the picture below and src to RGB and blend them.
         `[${cur}]split[bc${k}][bd${k}]`,
         `[bc${k}]scale=${FROM_WORK},format=gbrp[bx${k}]`,
         `[bs${k}]scale=${FROM_WORK},format=gbrp[by${k}]`,
         `[bx${k}][by${k}]blend=all_mode=${BLEND_MODES[blend]}:shortest=0:repeatlast=1,scale=${TO_WORK},format=yuv420p[bm${k}]`,
-        // 3. 掛け合わせた結果を、srcの形（アルファ）で切り抜いて下の絵に重ねる。
+        // 3. Cut the blended result out with the shape (alpha) of src and overlay it on the picture below.
         `[ba${k}]alphaextract[bk${k}]`,
         `[bm${k}][bk${k}]alphamerge[bo${k}]`,
         `[bd${k}][bo${k}]overlay=x=0:y=0:eof_action=repeat:format=yuv420[${n}]`,
@@ -158,7 +158,7 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
     cur = n;
   };
 
-  // 形のマスク（角丸・楕円）を白黒の絵として1枚作る。
+  // Makes one black-and-white picture for a shape mask (rounded corners, ellipse).
   const shapeMask = (w, h, shape, radius) => {
     const file = path.join(workDir, `mask_${createHash('sha1').update(`${w}x${h}:${shape}:${radius}`).digest('hex').slice(0, 10)}.png`);
     const expr = shape === 'ellipse'
@@ -175,7 +175,7 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
       const w = layer.width ?? W, h = layer.height ?? H, x = layer.x ?? 0, y = layer.y ?? 0;
       const clips = layer.clips ?? [{...layer, type: undefined}];
       for (const clip of clips) {
-        // color を書いたクリップは、その色で塗った絵を素材にする（暗転・帯・色かぶせ）。
+        // A clip with color uses a picture filled with that color as its asset (blackouts, bars, color overlays).
         const solid = clip.color !== undefined;
         const file = solid ? null : abs(clip.src);
         const image = solid || IMAGE.test(file);
@@ -205,7 +205,7 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
         const convert = `in_color_matrix=${image ? 'bt601' : inputMatrix(file)}:in_range=${image ? 'pc' : inputRange(file)}:${TO_WORK}`;
         const crop = clip.crop, align = get('align', [0.5, 0.5]), flip = get('flip', ''), key = get('chromaKey'), corners = get('corners'), shake = clip.shake;
 
-        // フィルタを順につなぐ。入力が2本要るフィルタ（マスク）の手前でいったん区切る。
+        // Chain the filters in order. Break the chain just before a filter that needs two inputs (the mask).
         let head = `[${i}:v]`;
         let chain = [`fps=${fps}`];
         const cut = () => {
@@ -216,23 +216,23 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
           return label;
         };
 
-        // 時間の扱い: 素材をコンポジションのfpsにそろえ、頭を切り、（止める・繰り返す・速度を変える）、表示する長さに切る。
+        // Timing: bring the asset to the composition fps, trim the start, (freeze / loop / change speed), then cut to the displayed length.
         if (freeze !== undefined) {
           chain.push(`trim=start_frame=${freeze}:end_frame=${freeze + 1}`, 'setpts=PTS-STARTPTS', 'loop=loop=-1:size=1:start=0');
         } else {
           if (trim > 0) chain.push(`trim=start_frame=${trim}`, 'setpts=PTS-STARTPTS');
           if (loopFrames) chain.push(`trim=end_frame=${loopFrames}`, `loop=loop=-1:size=${loopFrames}:start=0`);
           if (rate !== 1) chain.push(`setpts=PTS/${rate}`, `fps=${fps}`);
-          // 逆再生は、表示する長さぶんを切り出してから逆順にする。
+          // For reverse playback, cut out the displayed length first and then reverse it.
           if (clip.reverse) chain.push(`trim=end_frame=${dur}`, 'reverse');
         }
-        // 素材の一部を切り出す（縦動画化のパンなど）。位置はキーフレームにできる。
+        // Cut out part of the asset (such as panning when converting to vertical video). The position can be keyframed.
         if (crop) {
           const cv = (v) => (isKeyframed(v) ? `'${keyframeExpr(v.keyframes, v.easing, 'n')}'` : v ?? 0);
           chain.push(`crop=${crop.width}:${crop.height}:${cv(crop.x)}:${cv(crop.y)}`);
         }
-        // 最後のコマを伸ばしてから1コマ長めに切り、表示区間はoverlayのenableで決める。
-        // ちょうどの長さで切ると、overlayが入力の終わりを先に検知して最終コマを落とすことがある。素材が短いときは最後のコマで止まる。
+        // Extend the last frame, cut one frame longer, and set the visible span with the enable option of overlay.
+        // When cut to exactly its length, overlay can detect the end of the input first and drop the last frame. When the asset is short, it holds on its last frame.
         chain.push('tpad=stop_mode=clone:stop_duration=2', `trim=end_frame=${dur + 1}`, 'setpts=PTS-STARTPTS');
 
         let alpha = false;
@@ -242,7 +242,7 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
           if (fit === 'contain') return [`scale=${fw}:${fh}:force_original_aspect_ratio=decrease${extra}`];
           return [`scale=${fw}:${fh}:force_original_aspect_ratio=increase${extra}`, `crop=${fw}:${fh}:(iw-${fw})*${align[0]}:(ih-${fh})*${align[1]}`];
         };
-        // 色のフィルタは3D LUTにして、sRGBのままかける。
+        // Color filters are turned into a 3D LUT and applied in sRGB.
         let lut = null;
         if (css.color) {
           lut = path.join(workDir, `lut_${createHash('sha1').update(get('filter')).digest('hex').slice(0, 10)}.cube`);
@@ -250,9 +250,9 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
         }
 
         if (blur) {
-          // 強いぼかしは細部が残らないので、縮小してからぼかし、拡大して戻す。
-          // CSSのblurと同じく、端は外側の透明と混ざって薄くなる。
-          // overlayはRGBで乗算済みアルファを正しく合成しないので、ぼかした後に通常のアルファへ戻す。
+          // A strong blur leaves no detail, so scale down, blur, and scale back up.
+          // As with CSS blur, the edges mix with the transparency outside and fade.
+          // overlay does not composite premultiplied alpha correctly in RGB, so convert back to straight alpha after blurring.
           const d = Math.max(1, Math.floor(blur / 4));
           const sw = Math.round(w / d), sh = Math.round(h / d);
           const sigma = blur / d;
@@ -267,17 +267,17 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
           );
           alpha = true;
         } else {
-          // 素材が透過つきなら、そのアルファを保つ（題字などの透過PNGを重ねる）。
+          // If the asset has transparency, keep its alpha (for overlaying transparent PNGs such as titles).
           const srcAlpha = !solid && inputHasAlpha(file);
           chain.push(...fitted(w, h, `:${convert}`), srcAlpha ? 'format=yuva420p' : 'format=yuv420p');
           if (srcAlpha) alpha = true;
           if (fit === 'contain') {
-            // 余白は透明にして、下の層が見えるようにする。
+            // Make the margins transparent so that the layers below show through.
             needAlpha();
             chain.push(`pad=${w}:${h}:(ow-iw)/2:(oh-ih)/2:color=black@0`);
           }
           if (isKeyframed(zoom)) {
-            // 動く拡大。zoompanは切り出し位置が整数に丸められて揺れるので、2倍に拡大してから切り出す。
+            // Keyframed scale. zoompan rounds the crop position to integers and jitters, so scale up 2x before cropping.
             const z = keyframeExpr(zoom.keyframes, zoom.easing, 'on');
             chain.push(`scale=${w * 2}:${h * 2}:flags=bicubic`, `zoompan=z='${z}':x='iw*${ox}*(1-1/(${z}))':y='ih*${oy}*(1-1/(${z}))':d=1:s=${w}x${h}:fps=${fps}`);
           } else if (zoom !== 1) {
@@ -287,23 +287,23 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
           if (flip.includes('h')) chain.push('hflip');
           if (flip.includes('v')) chain.push('vflip');
           if (key) {
-            // 指定した色に近い所を透明にする（グリーンバックなど）。
+            // Make areas close to the given color transparent (green screen and the like).
             chain.push(`chromakey=${key.color.replace('#', '0x')}:${key.similarity ?? 0.15}:${key.blend ?? 0.05}`, 'format=yuva420p');
             alpha = true;
           }
           if (lut) chain.push(`scale=${FROM_WORK}`, `format=${alpha ? 'gbrap' : 'gbrp'}`, `lut3d=file='${lut}':interp=tetrahedral`, `scale=${TO_WORK}`, `format=${alpha ? 'yuva420p' : 'yuv420p'}`);
         }
         if (isKeyframed(rotate) || rotate !== 0) {
-          // 箱の中心で回す（時計回りが正）。はみ出した分は切れ、空いた所は透明になる。
+          // Rotate around the center of the box (clockwise is positive). Anything that sticks out is cropped, and the uncovered areas are transparent.
           needAlpha();
           const deg = isKeyframed(rotate) ? keyframeExpr(rotate.keyframes, rotate.easing, 'n') : rotate;
           chain.push(`rotate=a='(${deg})*PI/180':c=none:ow=iw:oh=ih`);
         }
         if (corners) {
-          // 四隅（左上・右上・左下・右下）の行き先を全体の座標で指定して、絵をはめ込む（画面の差し替えなど）。
+          // Fit the picture in by giving the destinations of its four corners (top-left, top-right, bottom-left, bottom-right) in composition coordinates (screen replacement and the like).
           needAlpha();
-          // perspectiveは絵の外側を端の色で埋めるので、絵のまわりに透明の縁を付けてから変形する。
-          // 縁の分だけ四隅を外へ広げ、絵そのものの角が指定の位置に来るようにする。
+          // perspective fills the outside of the picture with the edge color, so add a transparent border around the picture before transforming.
+          // Push the four corners outward by the border so that the corners of the picture itself land on the given positions.
           const B = 4;
           const widen = ([tl, tr, bl, br]) => {
             const out = (p, hx, vy) => [p[0] - (hx[0] - p[0]) * (B / w) - (vy[0] - p[0]) * (B / h), p[1] - (hx[1] - p[1]) * (B / w) - (vy[1] - p[1]) * (B / h)];
@@ -312,11 +312,11 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
           const frames = (isKeyframed(corners) ? corners.keyframes : [[0, corners], [1, corners]]).map(([f, c]) => [f, widen(c)]);
           const coord = (ci, axis) => (isKeyframed(corners) ? keyframeExpr(frames.map(([f, c]) => [f, c[ci][axis]]), corners.easing, 'on') : frames[0][1][ci][axis].toFixed(3));
           const pts = [0, 1, 2, 3].map((ci) => `x${ci}='${coord(ci, 0)}':y${ci}='${coord(ci, 1)}'`).join(':');
-          // 絵は全体の大きさ（層の箱は使わない）。縁を付けて変形し、縁を落とす。
+          // The picture is the size of the whole composition (the layer box is not used). Add the border, transform, then drop the border.
           chain.push(`pad=${w + 2 * B}:${h + 2 * B}:${B}:${B}:color=black@0`, `perspective=${pts}:sense=destination:eval=frame`, `crop=${W}:${H}:${B}:${B}`);
         }
         if (radius > 0 || mask) {
-          // マスク: 角丸（radius）、楕円（mask: "ellipse"）、白黒の画像（mask: ファイル。白い所が残る）。
+          // Mask: rounded corners (radius), ellipse (mask: "ellipse"), or a black-and-white image (mask: file; white areas are kept).
           needAlpha();
           const maskFile = mask && mask !== 'ellipse' ? abs(mask) : shapeMask(w, h, mask === 'ellipse' ? 'ellipse' : 'round', Math.min(radius, w / 2, h / 2));
           const mi = addInput('-loop', '1', '-framerate', String(fps), '-i', maskFile);
@@ -329,7 +329,7 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
         if (fixedOpacity < 1 || isKeyframed(opacity) || fadeIn > 0 || fadeOut > 0) {
           needAlpha();
           if (isKeyframed(opacity)) {
-            // 透明度のキーフレームは、コマごとの値を「その時刻にフィルタの設定を変える命令」にして渡す。
+            // Opacity keyframes are passed as per-frame values, each turned into a "command that changes the filter setting at that time".
             const name = `colorchannelmixer@op${++uid}`;
             const frames = opacity.keyframes.map((k) => k[0]), values = opacity.keyframes.map((k) => k[1]);
             const lines = [];
@@ -348,13 +348,13 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
           if (fadeIn > 0) chain.push(`fade=t=in:st=0:d=${sec(fadeIn)}:alpha=1`);
           if (fadeOut > 0) chain.push(`fade=t=out:st=${sec(dur - fadeOut)}:d=${sec(fadeOut)}:alpha=1`);
         }
-        // 開始位置はコマ数から正確に計算する（秒へ丸めた値を足すと、切り捨てで1コマ早まることがある）。
+        // Compute the start position exactly from the frame count (adding a value rounded to seconds can come out one frame early because of truncation).
         chain.push(`setpts='round(PTS+${from}/(${fps}*TB))'`);
         const label = cut();
 
-        // 位置のずらし（揺れ・パン）。キーフレームはクリップの先頭からのコマ数で書く。
+        // Position offset (shakes, pans). Keyframes are written in frames from the start of the clip.
         const local = `(t*${fps}-${from})`;
-        // 揺れ: 周期の違う正弦波を2つ足した動き。乱数ではないので、何度書き出しても同じ絵になる。
+        // Shake: the sum of two sine waves with different periods. No random numbers, so every render produces the same picture.
         const shakeExpr = (axis) => {
           if (!shake) return null;
           const {amplitude = 8, speed = 12, seed = 1, from: sf = 0, durationInFrames: sd = dur, decay = true} = shake;
@@ -372,7 +372,7 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
           return parts.length === 1 ? base : `'${parts.join('+')}'`;
         };
         const whole = from === 0 && dur >= N;
-        // 透視合成したクリップは全体の大きさになっているので、左上に置く。
+        // A clip with perspective compositing is already the size of the whole composition, so place it at the top-left.
         const px = corners ? 0 : x, py = corners ? 0 : y;
         overlay(label, pos(px, offsetX, 'x'), pos(py, offsetY, 'y'), {
           moving: isKeyframed(offsetX) || isKeyframed(offsetY) || Boolean(shake),
@@ -381,20 +381,20 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
           blend,
         });
 
-        // volumeを書いたクリップは、その動画の音声も同じタイミングで鳴らす。
+        // A clip with volume also plays the audio of that video at the same position.
         if (clip.volume !== undefined && freeze === undefined && !image && probe(file).some((s) => s.codec_type === 'audio')) {
           clipAudio.push({src: clip.src, from, durationInFrames: dur, trimBefore: trim, playbackRate: rate, loop: clip.loop, reverse: clip.reverse, volume: clip.volume, fadeIn: clip.audioFadeIn, fadeOut: clip.audioFadeOut});
         }
       }
     } else if (layer.type === 'adjust') {
-      // 調整レイヤー: ここまでに重ねた絵（全体か region の範囲）に、ぼかし・色・ビネット・粒子をかける。
+      // Adjustment layer: applies blur, color, vignette, and grain to everything stacked so far (the whole frame, or the area given by region).
       const r = layer.region ?? {x: 0, y: 0, width: W, height: H};
       const from = layer.from ?? 0, dur = layer.durationInFrames ?? N - from;
       const css = parseFilter(layer.filter ?? '');
       const k = ++uid;
       const fx = [`crop=${r.width}:${r.height}:${r.x}:${r.y}`];
       if (css.blur) {
-        // 端が暗くならないよう、範囲の外側も含めてぼかしてから切り出す。
+        // Blur with the area outside the region included, then crop, so that the edges do not darken.
         const m = Math.min(Math.ceil(css.blur * 2), r.x, r.y, W - r.x - r.width, H - r.y - r.height);
         fx[0] = `crop=${r.width + 2 * m}:${r.height + 2 * m}:${r.x - m}:${r.y - m}`;
         fx.push(`gblur=sigma=${css.blur}`, `crop=${r.width}:${r.height}:${m}:${m}`);
@@ -432,15 +432,15 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
         i = addInput('-framerate', String(fps), '-i', scene.pattern);
       } else {
         if (scene.segments.length === 0) continue;
-        // 層ごとに入力は1本。絵の切り替え時刻をconcatの一覧で指定する。
+        // One input per layer. The times at which the picture changes are given in a concat list.
         const size = layer.canvas ?? layer.region;
         const lines = ['ffconcat version 1.0'];
-        // 表示時間は「次の絵の開始時刻 − この絵の開始時刻」をマイクロ秒で出す。
-        // 各区間の長さを個別に丸めて足すと誤差がたまり、切り替わりが1コマ遅れることがある。
+        // Each display time is written in microseconds as "start time of the next picture − start time of this picture".
+        // Rounding the length of each span separately and adding them up accumulates error, and a change can come one frame late.
         const us = (frame) => Math.round((frame * 1e6) / fps);
         const entry = (file, from, to) => lines.push(`file '${file}'`, `option framerate ${fps}`, `duration ${((us(to) - us(from)) / 1e6).toFixed(6)}`);
         if (layer.opaque) {
-          // 不透明な層（JPEG）は透明の絵を挟めないので、何も描かない区間は前の絵を出したまま重ね合わせを止める。
+          // An opaque layer (JPEG) cannot have transparent pictures in between, so for spans where nothing is drawn, keep showing the previous picture and switch the overlay off.
           const ranges = [];
           scene.segments.forEach((seg, k) => {
             const start = k === 0 ? 0 : seg.start;
@@ -464,19 +464,19 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
         writeFileSync(list, lines.join('\n') + '\n');
         i = addInput('-f', 'concat', '-safe', '0', '-i', list);
       }
-      // regionを指定した層は、その範囲だけの小さな絵になっている。
-      // canvasを指定した層は好きな大きさの絵で、x・yで置く。xとyはキーフレームにでき、その場合はffmpegが絵を動かす。
+      // A layer with region is a small picture covering only that area.
+      // A layer with canvas is a picture of any size, placed with x and y. x and y can be keyframed, in which case ffmpeg moves the picture.
       const pos = (v, fallback) => (v === undefined ? fallback : isKeyframed(v) ? `'${keyframeExpr(v.keyframes, v.easing, `(t*${fps})`)}'` : v);
       const moving = isKeyframed(layer.x) || isKeyframed(layer.y);
-      // 絵の切り替わりがまばらな入力をそのまま重ねると、ffmpegの同期処理が下の層を1コマ遅らせることがある。
-      // fpsで一定間隔のコマ列にしてから重ねる。
+      // Overlaying an input whose pictures change only sparsely as it is can make the sync logic of ffmpeg delay the layer below by one frame.
+      // Convert it to a constant-interval frame sequence with fps before overlaying.
       graph.push(`[${i}:v]fps=${fps},scale=${TO_WORK},format=${layer.opaque ? 'yuv420p' : moving ? 'yuva444p' : 'yuva420p'}[s${i}]`);
       overlay(`s${i}`, pos(layer.x, layer.region?.x ?? 0), pos(layer.y, layer.region?.y ?? 0), {moving, enable, blend: layer.blend});
     }
   }
 
-  // 音声: トラックごとに切り出し・速度・フェード・開始位置・音量を付け、最後に足し合わせる。
-  // 1コマだけ書き出すときやGIFでは音声を組まない（つながらない枝が残るとffmpegが止まる）。
+  // Audio: each track gets its cut, speed, fades, start position, and volume, and the tracks are summed at the end.
+  // No audio is built for a single frame or a GIF (a branch left unconnected makes ffmpeg stop).
   const tracks = still || format === 'gif' ? [] : [...clipAudio, ...(Array.isArray(manifest.audio) ? manifest.audio : manifest.audio ? [manifest.audio] : [])];
   const mixed = [];
   for (const track of tracks) {
@@ -493,7 +493,7 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
     if (length !== undefined) chain.push(`atrim=duration=${sec(length)}`);
     if (track.reverse) chain.push('areverse');
     if (track.pitch) {
-      // 音程を半音単位で変える。再生速度を変えてから、同じ比で長さを戻す。
+      // Change pitch in semitones: change the playback speed, then restore the length by the same ratio.
       const ratio = 2 ** (track.pitch / 12);
       chain.push(`asetrate=${Math.round(SAMPLE_RATE * ratio)}`, `aresample=${SAMPLE_RATE}`, ...atempoChain(1 / ratio));
     }
@@ -502,7 +502,7 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
     if (track.fadeOut && length !== undefined) chain.push(`afade=t=out:st=${sec(length - track.fadeOut)}:d=${sec(track.fadeOut)}`);
     if (from > 0) chain.push(`adelay=${Math.round((from / fps) * SAMPLE_RATE)}S:all=1`);
     const volume = track.volume ?? 1;
-    // キーフレームは [[コマ, 値], ...] と {keyframes, easing} のどちらでも書ける。コマは動画全体のコマ番号（adelayの後に評価する）。
+    // Keyframes can be written as [[frame, value], ...] or as {keyframes, easing}. Frames are frame numbers of the whole video (evaluated after adelay).
     const points = Array.isArray(volume) ? volume : volume?.keyframes;
     const easing = (!Array.isArray(volume) && volume?.easing) || 'linear';
     if (points) chain.push(`volume=volume='${keyframeExpr(easing === 'linear' ? thinKeyframes(points) : points, easing, `(t*${fps})`)}':eval=frame`);
@@ -510,7 +510,7 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
     graph.push(`[${i}:a]${chain.join(',')}[a${i}]`);
     mixed.push(`[a${i}]`);
   }
-  // 仕上げ: 音量を1より上げたトラックがあると合計が振り切れるので、必要ならリミッターとラウドネス調整を最後にかける。
+  // Finishing: a track with volume above 1 can push the sum into clipping, so apply the limiter and loudness normalization last if needed.
   const m = manifest.master ?? {};
   const master = (m.limiter ? `,alimiter=limit=${m.limiter}:level=disabled` : '')
     + (m.loudnorm ? `,loudnorm=I=${m.loudnorm.i ?? -16}:TP=${m.loudnorm.tp ?? -1.5}:LRA=${m.loudnorm.lra ?? 11},aresample=${SAMPLE_RATE}` : '');
@@ -520,7 +520,7 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
     graph.push(`${mixed.join('')}amix=inputs=${mixed.length}:normalize=0:duration=longest,apad=whole_dur=${sec(N)},atrim=duration=${sec(N)}${master}${cut}[aout]`);
   }
 
-  // 一部のコマだけを書き出すとき。
+  // When rendering only part of the frames.
   let frames = N;
   if (range) {
     graph.push(`[${cur}]trim=start_frame=${range[0]}:end_frame=${range[1] + 1},setpts=PTS-STARTPTS[vcut]`);
@@ -529,7 +529,7 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
   }
 
   if (format === 'gif' && !still) {
-    // GIFは256色なので、全体から色の表を作ってから減色する。
+    // GIF has 256 colors, so build a palette from the whole video and then reduce the colors.
     graph.push(`[${cur}]split[g1][g2]`, '[g1]palettegen=stats_mode=diff[gp]', '[g2][gp]paletteuse=dither=bayer:bayer_scale=4[gout]');
     cur = 'gout';
   }
@@ -546,7 +546,7 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
   if (format === 'gif') {
     args.push('-loop', '0', out);
   } else if (format === 'mov') {
-    // 編集ソフトへ渡す用（ProRes 422 HQ、音声は無圧縮）。
+    // For handing off to editing software (ProRes 422 HQ, uncompressed audio).
     if (withAudio) args.push('-map', '[aout]', '-c:a', 'pcm_s16le', '-ar', String(SAMPLE_RATE));
     args.push('-c:v', 'prores_ks', '-profile:v', '3', '-pix_fmt', 'yuv422p10le', ...tags, out);
   } else if (format === 'webm') {

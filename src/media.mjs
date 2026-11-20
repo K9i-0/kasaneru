@@ -1,7 +1,7 @@
-// 素材を調べる道具。manifestを作るスクリプトから `import {probeMedia, envelope} from 'kasaneru/media'` で使う。
+// Tools for probing assets. Use from scripts that build manifests with `import {probeMedia, envelope} from 'kasaneru/media'`.
 import {execFileSync, spawnSync} from 'node:child_process';
 
-// 動画・音声・画像の基本情報。fps を渡すと、その fps でのコマ数も返す。
+// Basic information about a video, audio file, or image. Pass fps to also get the frame count at that fps.
 export function probeMedia(file, fps) {
   const info = JSON.parse(execFileSync('ffprobe', ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', file], {encoding: 'utf8'}));
   const v = info.streams.find((s) => s.codec_type === 'video');
@@ -17,7 +17,7 @@ export function probeMedia(file, fps) {
   return result;
 }
 
-// コマごとの音量（RMS、0〜1）。口パクや音に合わせた動きに使う。
+// Per-frame volume (RMS, 0–1). For lip sync and motion that follows the sound.
 export function envelope(file, fps, {digits = 4} = {}) {
   const rate = 16000;
   const raw = spawnSync('ffmpeg', ['-v', 'error', '-i', file, '-ac', '1', '-ar', String(rate), '-f', 'f32le', '-'], {maxBuffer: 1 << 30}).stdout;

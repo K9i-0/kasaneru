@@ -1,4 +1,4 @@
-// 字幕ファイル（SRT・ASS/SSA）を読む。時刻は秒で返し、toFrames でコマ数にする。
+// Reads subtitle files (SRT, ASS/SSA). Times are returned in seconds; toFrames converts them to frames.
 import {readFileSync} from 'node:fs';
 import path from 'node:path';
 
@@ -27,7 +27,7 @@ export function parseAss(text) {
     if (!inEvents) continue;
     if (/^format:/i.test(line)) { format = line.slice(7).split(',').map((s) => s.trim().toLowerCase()); continue; }
     if (!/^dialogue:/i.test(line) || !format) continue;
-    // 最後の項目（Text）にはカンマが入るので、項目数-1回だけ区切る。
+    // The last field (Text) can contain commas, so split only (number of fields - 1) times.
     const parts = line.slice(9).trim().split(',');
     const fields = parts.slice(0, format.length - 1).map((s) => s.trim());
     fields.push(parts.slice(format.length - 1).join(','));
@@ -49,8 +49,8 @@ export function readSubtitles(file) {
   const ext = path.extname(file).toLowerCase();
   if (ext === '.srt') return parseSrt(text);
   if (ext === '.ass' || ext === '.ssa') return parseAss(text);
-  throw new Error(`字幕は .srt か .ass / .ssa を使います: ${file}`);
+  throw new Error(`Subtitles must be .srt or .ass / .ssa: ${file}`);
 }
 
-// 秒 → コマ数。from を含み to を含まない。
+// Seconds → frames. from is inclusive, to is exclusive.
 export const toFrames = (items, fps) => items.map(({start, end, ...rest}) => ({from: Math.round(start * fps), to: Math.round(end * fps), ...rest}));

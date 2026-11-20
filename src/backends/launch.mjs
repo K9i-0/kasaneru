@@ -1,6 +1,6 @@
-// 描画に使うブラウザを起動する。
-// 既定は入っているGoogle Chrome。環境変数 KASANERU_BROWSER で、実行ファイルのパスか
-// Playwrightのチャンネル名（chrome / chrome-beta / msedge / chromium など）を指定できる。
+// Launch the browser used for drawing.
+// The default is the installed Google Chrome. The environment variable KASANERU_BROWSER can give the path to an executable or
+// a Playwright channel name (chrome / chrome-beta / msedge / chromium and so on).
 import {existsSync} from 'node:fs';
 import {chromium} from 'playwright-core';
 
@@ -10,6 +10,6 @@ export async function launchBrowser() {
   try {
     return await chromium.launch({...options, headless: true});
   } catch (e) {
-    throw new Error(`ブラウザを起動できません（${choice}）。Google Chromeを入れるか、KASANERU_BROWSER に実行ファイルのパスを指定してください。\n${e.message.split('\n')[0]}`);
+    throw new Error(`Cannot launch the browser (${choice}). Install Google Chrome, or set KASANERU_BROWSER to the path of an executable.\n${e.message.split('\n')[0]}`);
   }
 }

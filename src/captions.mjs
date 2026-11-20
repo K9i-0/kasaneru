@@ -1,4 +1,4 @@
-// 字幕の層（type: "captions"）。シーンを書かなくても、字幕ファイルか項目の一覧から字幕を重ねられる。
+// The captions layer (type: "captions"). Overlays captions from a subtitle file or a list of items, without writing a scene.
 import path from 'node:path';
 import {readSubtitles, toFrames} from './subtitles.mjs';
 
@@ -11,7 +11,7 @@ export function captionItems(layer, manifestDir, fps) {
   return toFrames(readSubtitles(path.resolve(manifestDir, layer.src)), fps);
 }
 
-// 字幕の層を、ブラウザで描く組み込みのシーンにする。
+// Turn a captions layer into a built-in scene drawn by the browser.
 export function captionsScene(items, style = {}, {width, height}) {
   const fontSize = style.fontSize ?? Math.round(Math.min(width, height) * 0.055);
   const stroke = style.strokeWidth ?? Math.round(fontSize * 0.14);
@@ -36,7 +36,7 @@ export function captionsScene(items, style = {}, {width, height}) {
   };
 }
 
-// manifestの captions 層を、描画バックエンドが扱える形（組み込みシーンを持つ scene 層）に置き換える。
+// Replace the captions layers of the manifest with a form the rendering backend can handle (scene layers that carry the built-in scene).
 export function expandCaptions(manifest, manifestDir) {
   let n = 0;
   const layers = manifest.layers.map((layer) => {

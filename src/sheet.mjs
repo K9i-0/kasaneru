@@ -1,7 +1,7 @@
-// 確認用のコマ一覧。指定したコマを1枚の画像に並べ、コマ番号を入れる。
+// Contact sheet for review. Lays the given frames out in one image, with frame numbers.
 import {execFileSync, spawnSync} from 'node:child_process';
 
-// manifestから、目で確かめたいコマ（各クリップ・字幕・シーンの切り替わりの前後）を拾う。
+// Picks from the manifest the frames worth checking by eye (just before and after each clip, caption, and scene change).
 export function boundaryFrames(manifest) {
   const N = manifest.composition.durationInFrames;
   const set = new Set([0, N - 1]);
@@ -15,7 +15,7 @@ export function boundaryFrames(manifest) {
 }
 
 export function contactSheet(video, frames, out, {cols = 4, cellWidth = 320} = {}) {
-  if (frames.length === 0) throw new Error('並べるコマがありません');
+  if (frames.length === 0) throw new Error('There are no frames to lay out');
   const hasText = spawnSync('ffmpeg', ['-hide_banner', '-filters'], {encoding: 'utf8'}).stdout.includes('drawtext');
   const rows = Math.ceil(frames.length / cols);
   const select = frames.map((f) => `eq(n\\,${f})`).join('+');

@@ -1,5 +1,5 @@
-// ページ内でスクリプトを動かして描くシーン（three.jsなどcanvasへ描くもの）。
-// シーンは setup(ctx) を1回、draw(frame) をコマごとに呼ばれる。key(frame) があれば同じkeyのコマは1回だけ描く。
+// Scenes drawn by running a script in the page (things that draw to a canvas, such as three.js).
+// For a scene, setup(ctx) is called once and draw(frame) for every frame. If key(frame) exists, frames with the same key are drawn only once.
 import {createReadStream, existsSync, mkdirSync, statSync} from 'node:fs';
 import {writeFile} from 'node:fs/promises';
 import http from 'node:http';
@@ -8,14 +8,14 @@ import {fileURLToPath} from 'node:url';
 
 const TYPES = {'.html': 'text/html', '.js': 'text/javascript', '.glb': 'model/gltf-binary', '.png': 'image/png', '.jpg': 'image/jpeg', '.webp': 'image/webp', '.json': 'application/json', '.wav': 'audio/wav'};
 
-// 素材（モデルや画像）をページから読めるよう、この書き出しの間だけ手元のファイルを127.0.0.1へ出す。
+// So that the page can load assets (models and images), serve local files on 127.0.0.1 for the duration of this render only.
 function serveLocalFiles(pageHtml, onMissing) {
   const server = http.createServer((req, res) => {
     const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
     if (pathname === '/page.html') { res.writeHead(200, {'content-type': 'text/html; charset=utf-8'}); res.end(pageHtml); return; }
     const file = pathname.startsWith('/@fs/') ? pathname.slice(4) : null;
     if (!file || !existsSync(file) || !statSync(file).isFile()) {
-      // ない素材を黙って404にしない（favicon.icoなど、素材でないものは数えない）。
+      // Do not silently 404 on an asset that does not exist (things that are not assets, such as favicon.ico, are not counted).
       if (file) onMissing(file);
       res.writeHead(404); res.end(); return;
     }
@@ -32,16 +32,16 @@ export async function renderPageLayers({context, manifest, manifestDir, layers, 
   const bundle = path.join(workDir, 'page.bundle.js');
   await build({entryPoints: [path.resolve(manifestDir, manifest.scenes.page)], outfile: bundle, bundle: true, format: 'iife', globalName: '__kasaneruPage', platform: 'browser', logLevel: 'error',
     alias: {'kasaneru/anim': path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../anim.mjs')},
-    // ツールの外にある共有コード（モーション部品など）からも、ツールに入っているthree等を使えるようにする。
+    // Let shared code outside the tool (motion parts and the like) also use three and the other packages bundled with the tool.
     nodePaths: [path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../node_modules')]});
   const background = manifest.background ?? '#000000';
   const html = `<!doctype html><html><head><meta charset="utf-8"><style>*{box-sizing:border-box}html,body{margin:0;width:100vw;height:100vh;overflow:hidden;background:transparent}#root{position:relative;width:100%;height:100%;overflow:hidden}</style></head><body><div id="root"></div></body></html>`;
-  // 読めなかった素材と、ページ内で起きたエラー。呼び出し元へ返す。
+  // Assets that could not be loaded, and errors raised in the page. Returned to the caller.
   const missing = new Map();
   const warnings = [];
   let currentLayer = null;
   const {server, origin} = await serveLocalFiles(html, (file) => {
-    if (!missing.has(file)) missing.set(file, {where: `scene「${currentLayer}」`, message: `素材を読めません: ${file}`});
+    if (!missing.has(file)) missing.set(file, {where: `scene "${currentLayer}"`, message: `Cannot load asset: ${file}`});
   });
   const assets = `${origin}/@fs${path.resolve(manifestDir, manifest.assets ?? '.')}/`;
   const ctx = {width, height, fps, durationInFrames: N, props: manifest.props ?? {}, assets};
@@ -58,8 +58,8 @@ export async function renderPageLayers({context, manifest, manifestDir, layers, 
         const page = await context.newPage();
         page.on('pageerror', (e) => {
           console.error(`[page] ${e.message}`);
-          const message = `ページ内でエラーが起きました: ${e.message}`;
-          if (!warnings.some((w) => w.message === message)) warnings.push({where: `scene「${layer.id}」`, message});
+          const message = `Error in the page: ${e.message}`;
+          if (!warnings.some((w) => w.message === message)) warnings.push({where: `scene "${layer.id}"`, message});
         });
         const cdp = await context.newCDPSession(page);
         await cdp.send('Emulation.setDefaultBackgroundColorOverride', {color: {r: 0, g: 0, b: 0, a: 0}});

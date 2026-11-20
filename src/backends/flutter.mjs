@@ -1,5 +1,5 @@
-// 描画バックエンド（Flutter）: `flutter test` の中でウィジェットを透過PNGにする。画面もブラウザも使わない。
-// シーンは作品側のDartファイル（manifestの scenes.flutter）に書く。それを読み込む入口をここで生成して実行する。
+// Rendering backend (Flutter): turns widgets into transparent PNGs inside `flutter test`. Uses neither a window nor a browser.
+// Scenes are written in a Dart file on the project side (scenes.flutter in the manifest). The entry point that loads it is generated and run here.
 import {spawn} from 'node:child_process';
 import {createHash} from 'node:crypto';
 import {mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
@@ -25,11 +25,11 @@ export async function renderScenes({manifest, manifestDir, sceneLayers, workDir,
     workDir,
     resultFile,
   }));
-  // 作品ごとに入口を1つ作る（同じ作品なら同じ名前なので、2回目以降はコンパイル結果が使い回される）。
+  // Make one entry point per project (the same project gets the same name, so from the second run on the compiled result is reused).
   const entryDir = path.join(packageDir, 'test', 'generated');
   mkdirSync(entryDir, {recursive: true});
   const entry = path.join(entryDir, `${createHash('sha1').update(scenePath).digest('hex').slice(0, 12)}_test.dart`);
-  writeFileSync(entry, `// 自動生成。${scenePath} のシーンを読み込む入口。
+  writeFileSync(entry, `// Generated. Entry point that loads the scenes in ${scenePath}.
 import 'package:kasaneru_flutter/runner.dart';
 
 import '${pathToFileURL(scenePath).href}' as project;

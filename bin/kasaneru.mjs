@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// kasaneru: manifestから動画を書き出す。
+// kasaneru: renders a video from a manifest.
 import {existsSync, mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
 import {parseArgs} from 'node:util';
@@ -14,19 +14,19 @@ import {readSubtitles, toFrames} from '../src/subtitles.mjs';
 import {formatProblems, validateManifest} from '../src/validate.mjs';
 
 const USAGE = `usage:
-  kasaneru render <manifest.json> -o <out.mp4|.mov|.webm|.gif>   書き出す
-        [--backend browser|flutter|none] [--frames A-B] [--concurrency N] [--props <file|json>] [--set a.b=値]...
+  kasaneru render <manifest.json> -o <out.mp4|.mov|.webm|.gif>   Render
+        [--backend browser|flutter|none] [--frames A-B] [--concurrency N] [--props <file|json>] [--set a.b=value]...
         [--encoder libx264|h264_videotoolbox] [--crf N] [--audio-bitrate 192k] [--every-frame] [--keep-work]
         [--allow-missing-assets]
-  kasaneru still <manifest.json> --frame N -o <out.png>          1コマだけ書き出す
-  kasaneru check <manifest.json>                                 manifestの誤りを調べる（書き出さない）
-  kasaneru inspect <video> [--deep]                              書き出した動画を点検する（--deep は壊れたコマも探す）
-  kasaneru sheet <video> -o <sheet.png>                          確認用のコマ一覧を作る
+  kasaneru still <manifest.json> --frame N -o <out.png>          Render a single frame
+  kasaneru check <manifest.json>                                 List the errors in the manifest (without rendering)
+  kasaneru inspect <video> [--deep]                              Inspect a rendered video (--deep also looks for broken frames)
+  kasaneru sheet <video> -o <sheet.png>                          Make a contact sheet of frames for review
         [--frames 0,120,240 | --every N | --manifest <manifest.json>] [--cols N]
-  kasaneru srt <manifest.json> -o <out.srt> [--key props.captions]   字幕をSRTにする
-  kasaneru captions <file.srt|.ass> --fps N                      字幕ファイルを [{from, to, text}] のJSONにする
-  kasaneru probe <file> [--fps N]                                素材の長さ・大きさを調べる
-  kasaneru envelope <audio> --fps N                              コマごとの音量（口パク用）をJSONにする`;
+  kasaneru srt <manifest.json> -o <out.srt> [--key props.captions]   Write the captions as SRT
+  kasaneru captions <file.srt|.ass> --fps N                      Convert a subtitle file to JSON [{from, to, text}]
+  kasaneru probe <file> [--fps N]                                Report the length and dimensions of an asset
+  kasaneru envelope <audio> --fps N                              Output the per-frame volume as JSON (for lip sync)`;
 
 const {values: opt, positionals} = parseArgs({
   allowPositionals: true,
@@ -58,11 +58,11 @@ const fail = (message, code = 2) => { console.error(message); process.exit(code)
 const print = (value) => console.log(JSON.stringify(value, null, 2));
 const COMMANDS = ['render', 'still', 'check', 'inspect', 'sheet', 'srt', 'captions', 'probe', 'envelope'];
 if (!COMMANDS.includes(command) || !target) fail(USAGE);
-if (!['browser', 'flutter', 'none'].includes(opt.backend)) fail('--backend は browser / flutter / none のどれかです');
-const needFps = () => { const fps = Number(opt.fps); if (!(fps > 0)) fail('--fps にコンポジションのfpsを指定します'); return fps; };
-const needFile = (p) => { const full = path.resolve(p); if (!existsSync(full)) fail(`ファイルがありません: ${full}`, 1); return full; };
+if (!['browser', 'flutter', 'none'].includes(opt.backend)) fail('--backend must be one of browser / flutter / none');
+const needFps = () => { const fps = Number(opt.fps); if (!(fps > 0)) fail('--fps is required: pass the fps of the composition'); return fps; };
+const needFile = (p) => { const full = path.resolve(p); if (!existsSync(full)) fail(`File not found: ${full}`, 1); return full; };
 
-// manifestを読み、props の差し替え（--props / --set）を当てて、検証する。
+// Read the manifest, apply the props overrides (--props / --set), and validate it.
 function loadManifest(file) {
   const manifestPath = needFile(file);
   const manifestDir = path.dirname(manifestPath);
@@ -70,19 +70,19 @@ function loadManifest(file) {
   try {
     manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
   } catch (e) {
-    fail(`manifestを読めません: ${manifestPath}\n${e.message}`);
+    fail(`Cannot read the manifest: ${manifestPath}\n${e.message}`);
   }
   if (opt.props) {
-    // 同じmanifestから変種を作る（文言違い・画角違いなど）。
+    // Make variants from the same manifest (different wording, different framing, and so on).
     const text = existsSync(opt.props) ? readFileSync(opt.props, 'utf8') : opt.props;
-    try { manifest.props = merge(manifest.props ?? {}, JSON.parse(text)); } catch (e) { fail(`--props を読めません: ${e.message}`); }
+    try { manifest.props = merge(manifest.props ?? {}, JSON.parse(text)); } catch (e) { fail(`Cannot read --props: ${e.message}`); }
   }
   for (const pair of opt.set ?? []) {
     const eq = pair.indexOf('=');
-    if (eq < 1) fail(`--set は 場所=値 で書きます（例: --set title=こんにちは）: ${pair}`);
+    if (eq < 1) fail(`--set takes path=value (example: --set title=Hello): ${pair}`);
     const keys = pair.slice(0, eq).split('.');
     let value = pair.slice(eq + 1);
-    try { value = JSON.parse(value); } catch { /* 文字列のまま使う */ }
+    try { value = JSON.parse(value); } catch { /* use it as a string */ }
     let node = (manifest.props ??= {});
     for (const k of keys.slice(0, -1)) node = (node[k] ??= {});
     node[keys[keys.length - 1]] = value;
@@ -96,11 +96,11 @@ function merge(a, b) {
   for (const [k, v] of Object.entries(b)) out[k] = k in a ? merge(a[k], v) : v;
   return out;
 }
-// 省略や便利な書き方（順に並べる・長さの自動計算・ダッキング）を具体的な値にし、字幕の層を組み込みのシーンに置き換える。
+// Resolve omissions and shorthands (sequencing, automatic length calculation, ducking) into concrete values, and replace captions layers with the built-in scene.
 function prepare({manifest, manifestDir, problems}) {
   if (problems.errors.length > 0) {
     console.error(formatProblems(problems));
-    fail(`manifestに誤りが ${problems.errors.length} 件あります。直してからやり直してください。`, 1);
+    fail(`The manifest has ${problems.errors.length} error(s). Fix them and try again.`, 1);
   }
   try {
     return expandCaptions(resolveManifest(manifest, manifestDir), manifestDir);
@@ -135,7 +135,7 @@ const loaded = loadManifest(target);
 if (command === 'check') {
   const {problems} = loaded;
   if (problems.errors.length === 0) {
-    // 書き方は正しくても、素材の長さが読めないなどで具体化に失敗することがある。
+    // Even a well-formed manifest can fail to resolve, for example when the length of an asset cannot be read.
     try { resolveManifest(loaded.manifest, loaded.manifestDir); } catch (e) { problems.errors.push({where: 'manifest', message: e.message}); }
   }
   print({ok: problems.errors.length === 0, ...problems});
@@ -148,7 +148,7 @@ const {manifestDir, problems} = loaded;
 if (command === 'srt') {
   if (!opt.out) fail(USAGE);
   const items = collectCaptions(manifest, opt.key);
-  if (items.length === 0) fail('字幕が見つかりません。captions の層がないときは --key props.captions のように場所を指定します', 1);
+  if (items.length === 0) fail('No captions found. If there is no captions layer, point at their location, as in --key props.captions', 1);
   writeFileSync(path.resolve(opt.out), toSrt(items, manifest.composition.fps));
   print({out: path.resolve(opt.out), captions: items.length});
   process.exit(0);
@@ -159,18 +159,18 @@ const still = command === 'still';
 let range = null;
 if (still) {
   const f = Number(opt.frame);
-  if (!Number.isInteger(f) || f < 0 || f >= N) fail(`--frame は 0〜${N - 1} の整数で指定します`);
+  if (!Number.isInteger(f) || f < 0 || f >= N) fail(`--frame must be an integer from 0 to ${N - 1}`);
   range = [f, f];
 } else if (opt.frames) {
   const m = /^(\d+)-(\d+)$/.exec(opt.frames);
-  if (!m || Number(m[1]) > Number(m[2]) || Number(m[2]) >= N) fail(`--frames は A-B（0〜${N - 1}、A≦B）で指定します`);
+  if (!m || Number(m[1]) > Number(m[2]) || Number(m[2]) >= N) fail(`--frames takes A-B (0 to ${N - 1}, A <= B)`);
   range = [Number(m[1]), Number(m[2])];
 }
 if (!opt.out) fail(USAGE);
 const out = path.resolve(opt.out);
 const format = still ? 'png' : path.extname(out).slice(1).toLowerCase();
-if (!still && !['mp4', 'mov', 'webm', 'gif'].includes(format)) fail('出力は .mp4 / .mov / .webm / .gif のどれかです');
-if (opt['audio-bitrate'] !== undefined && !/^\d+(\.\d+)?[kM]?$/.test(opt['audio-bitrate'])) fail('--audio-bitrate は 192k や 256000 のように書きます');
+if (!still && !['mp4', 'mov', 'webm', 'gif'].includes(format)) fail('The output must be one of .mp4 / .mov / .webm / .gif');
+if (opt['audio-bitrate'] !== undefined && !/^\d+(\.\d+)?[kM]?$/.test(opt['audio-bitrate'])) fail('--audio-bitrate is written like 192k or 256000');
 
 const workDir = path.resolve(opt.work ?? out.replace(/\.[^.]+$/, '') + '.work');
 rmSync(workDir, {recursive: true, force: true});
@@ -191,12 +191,12 @@ if (opt.backend !== 'none' && sceneLayers.length > 0) {
   scenes = result.scenes;
   backendTimings = result.timings;
   problems.warnings.push(...(result.warnings ?? []));
-  // 読めなかった画像があると、絵が欠けたまま完成してしまう。既定では書き出さない。
+  // If an image could not be loaded, the video would be finished with part of the picture missing. By default, do not render.
   const missing = result.missing ?? [];
   if (missing.length > 0 && !opt['allow-missing-assets']) {
     console.error(formatProblems({errors: missing, warnings: []}));
     if (!opt['keep-work']) rmSync(workDir, {recursive: true, force: true});
-    fail(`シーンの素材を ${missing.length} 件読めませんでした。パスを直してからやり直してください（欠けたまま書き出すなら --allow-missing-assets）。`, 1);
+    fail(`${missing.length} scene asset(s) could not be loaded. Fix the paths and try again (or pass --allow-missing-assets to render anyway).`, 1);
   }
   problems.warnings.push(...missing);
 }
@@ -204,7 +204,7 @@ const t1 = performance.now();
 const args = buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder: opt.encoder, crf: opt.crf, audioBitrate: opt['audio-bitrate'], workDir, range, still, format});
 await runFfmpeg(args);
 const t2 = performance.now();
-// 作業用フォルダは、調べたいとき（--keep-work）以外は消す。
+// Delete the working folder unless it is wanted for inspection (--keep-work).
 if (!opt['keep-work']) rmSync(workDir, {recursive: true, force: true});
 
 const images = Object.values(scenes).reduce((n, s) => n + (s.mode === 'sequence' ? s.count : s.images ?? s.segments.length), 0);

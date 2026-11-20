@@ -1,17 +1,17 @@
-// manifestの省略や便利な書き方を、書き出しの前に具体的な値へ直す。
-//   - sequence: true の層は、クリップを順に並べる（from を自動で決める）
-//   - composition.durationInFrames を省くと、いちばん遅く終わるクリップ・音声に合わせる
-//   - audio の duck は、相手のトラックが鳴っている間だけ音量を下げるキーフレームにする
+// Resolves omissions and shorthands in the manifest into concrete values before rendering.
+//   - A layer with sequence: true lines its clips up one after another (from is set automatically)
+//   - If composition.durationInFrames is omitted, it is set to the end of the latest-ending clip or audio track
+//   - duck on an audio track becomes keyframes that lower the volume only while the other tracks are playing
 import path from 'node:path';
 import {probe} from './ffmpeg.mjs';
 
 const IMAGE = /\.(png|jpe?g|webp|bmp|gif)$/i;
 
-// 素材の長さ（コンポジションのfpsでのコマ数）。
+// Length of an asset (in frames at the composition fps).
 export function mediaFrames(file, fps, kind = 'video') {
   const stream = probe(file).find((s) => s.codec_type === kind) ?? probe(file)[0];
   const seconds = Number(stream?.duration);
-  if (!Number.isFinite(seconds)) throw new Error(`長さを読めません: ${file}`);
+  if (!Number.isFinite(seconds)) throw new Error(`Cannot read the length: ${file}`);
   return Math.round(seconds * fps);
 }
 
@@ -21,7 +21,7 @@ export function resolveManifest(source, manifestDir) {
   const abs = (p) => path.resolve(manifestDir, p);
   let end = 0;
 
-  // 表示する長さ: 書いてあればそれ、なければ素材の残り（頭を飛ばした分と速度を反映）。
+  // Displayed length: the written value if there is one, otherwise the rest of the asset (accounting for the skipped start and the speed).
   const clipLength = (clip) => {
     if (clip.durationInFrames !== undefined) return clip.durationInFrames;
     if (clip.color || IMAGE.test(clip.src) || clip.loop || clip.freeze !== undefined) return null;
@@ -36,7 +36,7 @@ export function resolveManifest(source, manifestDir) {
       for (const clip of clips) {
         if (clip.from !== undefined) cursor = clip.from;
         const length = clipLength(clip);
-        if (length === null) throw new Error('sequence の層では、静止画・単色・ループ・フリーズのクリップに durationInFrames が必要です');
+        if (length === null) throw new Error('In a sequence layer, still image, solid color, loop, and freeze clips require durationInFrames');
         clip.from = cursor;
         clip.durationInFrames = length;
         cursor += length - (layer.overlap ?? 0);
@@ -57,12 +57,12 @@ export function resolveManifest(source, manifestDir) {
   }
 
   if (manifest.composition.durationInFrames === undefined) {
-    if (end === 0) throw new Error('全体の長さを決められません。composition.durationInFrames を書いてください');
+    if (end === 0) throw new Error('Cannot determine the total length. Set composition.durationInFrames');
     manifest.composition.durationInFrames = end;
   }
   const N = manifest.composition.durationInFrames;
 
-  // ダッキング: by に挙げたグループのトラックが鳴っている区間を集め、その間だけ音量を下げる。
+  // Ducking: collect the spans where tracks in the groups listed in by are playing, and lower the volume only during them.
   for (const t of tracks) {
     if (!t.duck) continue;
     const {by, to = 0.35, attack = 4, release = 8, lead = 3, tail = 2} = t.duck;
@@ -74,19 +74,19 @@ export function resolveManifest(source, manifestDir) {
       .sort((a, b) => a[0] - b[0])
       .reduce((merged, r) => {
         const last = merged[merged.length - 1];
-        // 次の発話までの間が短いときは、上げ下げせずにつなぐ。
+        // When the gap before the next utterance is short, bridge it without raising and lowering.
         if (last && r[0] <= last[1] + attack + release) last[1] = Math.max(last[1], r[1]);
         else merged.push([...r]);
         return merged;
       }, []);
     const points = [[0, ranges[0]?.[0] <= 0 ? base * to : base]];
     for (const [a, b] of ranges) {
-      // 立ち上がり・戻りが0コマでも、段差になるよう最低1コマ空ける。
+      // Even when attack or release is 0 frames, leave at least 1 frame so that it becomes a step.
       if (a > 0) points.push([Math.max(0, a - Math.max(1, attack)), base], [a, base * to]);
       if (b < N) points.push([b, base * to], [Math.min(N, b + Math.max(1, release)), base]);
     }
     points.push([N + 1, points[points.length - 1][1]]);
-    // 同じコマや戻るコマを除く（キーフレームは必ず後ろへ進む）。
+    // Drop frames that repeat or go back (keyframes must always move forward).
     t.volume = points.filter((p, i) => i === 0 || p[0] > points[i - 1][0]);
     delete t.duck;
     delete t.group;

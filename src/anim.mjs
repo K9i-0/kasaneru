@@ -1,4 +1,4 @@
-// シーンで使う、フレームから値を作る関数。すべて純粋な関数。
+// Functions for scenes that produce values from the frame. All of them are pure functions.
 export const easings = {
   linear: (p) => p,
   inCubic: (p) => p ** 3,
@@ -7,13 +7,13 @@ export const easings = {
   inQuad: (p) => p * p,
   outQuad: (p) => 1 - (1 - p) ** 2,
   inOutQuad: (p) => (p < 0.5 ? 2 * p * p : 1 - (2 - 2 * p) ** 2 / 2),
-  // 少し行き過ぎてから戻る
+  // Overshoots a little, then comes back
   outBack: (p) => 1 + 2.70158 * (p - 1) ** 3 + 1.70158 * (p - 1) ** 2,
 };
 
 export const clamp = (v, min = 0, max = 1) => Math.min(max, Math.max(min, v));
 
-// 種から決まる乱数（0以上1未満）。同じ種なら何度呼んでも同じ値なので、書き出すたびに絵が変わらない。
+// A random number determined by a seed (0 or more, less than 1). The same seed gives the same value on every call, so the picture does not change from render to render.
 export function random(seed) {
   let h = 2166136261;
   for (const ch of String(seed)) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
@@ -21,19 +21,19 @@ export function random(seed) {
   return (h >>> 0) / 4294967296;
 }
 
-// なめらかに変わる乱れ（-1〜1）。x を時間（コマ数×速さ）にして、揺れやゆらぎに使う。
+// Smoothly varying noise (-1 to 1). Pass time (frame count × speed) as x and use it for shakes and wobbles.
 export function noise(seed, x) {
   const i = Math.floor(x), t = x - i;
   const a = random(`${seed}:${i}`) * 2 - 1, b = random(`${seed}:${i + 1}`) * 2 - 1;
   return a + (b - a) * (t * t * (3 - 2 * t));
 }
 
-// 文字を1つずつ出す。frame コマ目までに出ている部分を返す（perSecond は1秒あたりの文字数）。
+// Shows text one character at a time. Returns the part shown by the given frame (perSecond is characters per second).
 export function typewriter(text, frame, fps, perSecond = 20) {
   return Array.from(text).slice(0, Math.max(0, Math.floor((frame / fps) * perSecond))).join('');
 }
 
-// frameを[f0, f1, ...]から[v0, v1, ...]へ写す。範囲外は端の値で止まる。
+// Maps frame from [f0, f1, ...] to [v0, v1, ...]. Outside the range it holds the end value.
 export function interpolate(frame, frames, values, easing = 'linear') {
   if (frame <= frames[0]) return values[0];
   for (let i = 1; i < frames.length; i++) {
@@ -45,7 +45,7 @@ export function interpolate(frame, frames, values, easing = 'linear') {
   return values[values.length - 1];
 }
 
-// 0から1へ向かう減衰ばね。運動方程式の解をそのまま使う（数値積分しない）。
+// A damped spring going from 0 to 1. Uses the closed-form solution of the equation of motion (no numerical integration).
 export function spring({frame, fps, damping = 10, stiffness = 100, mass = 1}) {
   const t = Math.max(0, frame) / fps;
   const w0 = Math.sqrt(stiffness / mass);
@@ -60,7 +60,7 @@ export function spring({frame, fps, damping = 10, stiffness = 100, mass = 1}) {
   return 1 - (r2 * Math.exp(r1 * t) - r1 * Math.exp(r2 * t)) / (r2 - r1);
 }
 
-// 動きが止まったら同じ値にそろえ、同じ絵として1回だけ描かれるようにする。
+// Once the motion has stopped, snap to the same value so that those frames are drawn only once, as the same picture.
 export function settle(value, target = 1, digits = 3) {
   const q = Number(value.toFixed(digits));
   return Math.abs(q - target) <= 2 * 10 ** -digits ? target : q;

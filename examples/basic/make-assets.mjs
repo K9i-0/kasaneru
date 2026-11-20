@@ -1,4 +1,4 @@
-// この例で使う素材を、ffmpegの内蔵の絵と音から作る（外部の素材は要らない）。
+// Makes the assets for this example from the built-in pictures and sounds of ffmpeg (no external assets needed).
 //   node examples/basic/make-assets.mjs
 import {execFileSync} from 'node:child_process';
 import {mkdirSync} from 'node:fs';

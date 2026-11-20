@@ -1,5 +1,7 @@
 # kasaneru
 
+[English](README.md)
+
 manifest（JSON）から動画を書き出すツール。名前は「重ねる」から。層を重ねて動画を作る。
 
 - 動画・音声の切り貼りと合成は `ffmpeg`（外部コマンド）

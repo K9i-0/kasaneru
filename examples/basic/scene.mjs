@@ -1,4 +1,4 @@
-// 題名の層。ばねで出て、止まった後は同じ絵になる（1回しか描かれない）。
+// The title layer. It springs in, and after it settles every frame is the same picture (drawn only once).
 import {settle, spring} from 'kasaneru/anim';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));

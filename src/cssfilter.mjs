@@ -1,20 +1,20 @@
-// CSSの filter と同じ書き方（"brightness(1.1) sepia(0.4) hue-rotate(20deg)"）を読み、色の変換を3D LUTにする。
-// 計算はCSSの仕様どおりsRGBのまま行い、関数ごとに0〜1へ切り詰める。blur() と opacity() は色ではないので別に返す。
+// Reads the same syntax as CSS filter ("brightness(1.1) sepia(0.4) hue-rotate(20deg)") and turns the color transforms into a 3D LUT.
+// As in the CSS spec, the math stays in sRGB and each function clamps to 0–1. blur() and opacity() are not color operations, so they are returned separately.
 
 const clamp = (x) => Math.min(1, Math.max(0, x));
 const matrix = (m) => ([r, g, b]) => [m[0] * r + m[1] * g + m[2] * b, m[3] * r + m[4] * g + m[5] * b, m[6] * r + m[7] * g + m[8] * b];
 
 const amount = (raw) => {
   const v = parseFloat(raw);
-  if (!Number.isFinite(v)) throw new Error(`数値が必要です: ${raw}`);
+  if (!Number.isFinite(v)) throw new Error(`A number is required: ${raw}`);
   return raw.trim().endsWith('%') ? v / 100 : v;
 };
 const angle = (raw) => {
   const v = parseFloat(raw);
-  if (!Number.isFinite(v)) throw new Error(`角度が必要です: ${raw}`);
+  if (!Number.isFinite(v)) throw new Error(`An angle is required: ${raw}`);
   const unit = raw.trim().replace(/^[-+\d.eE]+/, '') || 'deg';
   const toRad = {deg: Math.PI / 180, rad: 1, turn: 2 * Math.PI, grad: Math.PI / 200}[unit];
-  if (!toRad) throw new Error(`角度の単位が分かりません: ${raw}`);
+  if (!toRad) throw new Error(`Unknown angle unit: ${raw}`);
   return v * toRad;
 };
 
@@ -45,7 +45,7 @@ const COLOR = {
 };
 export const filterNames = [...Object.keys(COLOR), 'blur', 'opacity'];
 
-// → {color: 色の変換関数（なければnull）, blur: px, opacity: 0〜1}
+// → {color: color transform function (null if none), blur: px, opacity: 0–1}
 export function parseFilter(text) {
   const steps = [];
   let blur = 0, opacity = 1;
@@ -53,16 +53,16 @@ export function parseFilter(text) {
     if (name === 'blur') blur += parseFloat(arg);
     else if (name === 'opacity') opacity *= clamp(amount(arg));
     else if (COLOR[name]) steps.push(COLOR[name](arg));
-    else throw new Error(`知らないフィルタです: ${name}（使えるのは ${filterNames.join(', ')}）`);
+    else throw new Error(`Unknown filter: ${name} (available: ${filterNames.join(', ')})`);
     return '';
   });
-  if (rest.trim()) throw new Error(`読めない部分があります: "${rest.trim()}"`);
-  if (!Number.isFinite(blur) || blur < 0) throw new Error('blur() には0以上のpxを書きます');
+  if (rest.trim()) throw new Error(`Cannot parse: "${rest.trim()}"`);
+  if (!Number.isFinite(blur) || blur < 0) throw new Error('blur() takes a px value of 0 or more');
   const color = steps.length === 0 ? null : (rgb) => steps.reduce((c, f) => f(c).map(clamp), rgb);
   return {color, blur, opacity};
 }
 
-// 色の変換を .cube 形式の3D LUTにする（赤が最も速く変わる並び）。
+// Turns the color transform into a 3D LUT in .cube format (ordered so that red changes fastest).
 export function cubeLut(color, size = 33) {
   const lines = [`LUT_3D_SIZE ${size}`];
   for (let b = 0; b < size; b++) for (let g = 0; g < size; g++) for (let r = 0; r < size; r++) {
