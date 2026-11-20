@@ -1,0 +1,27 @@
+{
+  "composition": {"width": 1280, "height": 720, "fps": 30, "durationInFrames": 210},
+  "background": "#0b1020",
+  "scenes": {"browser": "scene.mjs"},
+  "layers": [
+    {
+      "type": "video",
+      "clips": [
+        {"src": "assets/a.mp4", "durationInFrames": 105, "fadeOut": 15, "volume": 0.5},
+        {"src": "assets/b.mp4", "from": 90, "durationInFrames": 120, "fadeIn": 15, "filter": "saturate(1.3) contrast(1.05)",
+          "scale": {"keyframes": [[0, 1.0], [120, 1.15]], "easing": "outCubic"}}
+      ]
+    },
+    {
+      "type": "video", "x": 900, "y": 60, "width": 320, "height": 180,
+      "clips": [{"src": "assets/card.png", "from": 30, "durationInFrames": 150, "radius": 24, "fadeIn": 10, "fadeOut": 10,
+        "rotate": {"keyframes": [[0, -8], [150, 8]]}, "blend": "screen"}]
+    },
+    {"type": "scene", "id": "title", "scene": "title"},
+    {"type": "captions", "src": "captions.srt", "style": {"fontSize": 40, "bottom": 54}}
+  ],
+  "audio": [
+    {"src": "assets/bed.wav", "from": 0, "durationInFrames": 210, "loop": true, "volume": [[0, 0.6], [180, 0.6], [209, 0]]}
+  ],
+  "master": {"limiter": 0.95},
+  "props": {"fps": 30, "title": "kasaneru basic"}
+}

@@ -1,0 +1,6 @@
+node_modules/
+out/
+flutter_backend/.dart_tool/
+flutter_backend/build/
+flutter_backend/pubspec.lock
+examples/basic/assets/

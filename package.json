@@ -1,0 +1,42 @@
+{
+  "name": "kasaneru",
+  "version": "0.0.1",
+  "type": "module",
+  "description": "Render video from a JSON manifest. ffmpeg cuts and composites video and audio; a rendering backend (browser or Flutter) draws text, shapes and 3D as images to layer on top",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/K9i-0/kasaneru.git"
+  },
+  "files": [
+    "bin",
+    "src",
+    "flutter_backend/lib",
+    "flutter_backend/pubspec.yaml",
+    "README.md",
+    "README.ja.md",
+    "LICENSE"
+  ],
+  "bin": {
+    "kasaneru": "bin/kasaneru.mjs"
+  },
+  "dependencies": {
+    "esbuild": "0.25.10",
+    "playwright-core": "1.56.1",
+    "react": "19.2.3",
+    "react-dom": "19.2.3",
+    "three": "0.180.0"
+  },
+  "scripts": {
+    "test": "node --test test/render.test.mjs"
+  },
+  "license": "MIT",
+  "engines": {
+    "node": ">=22"
+  },
+  "exports": {
+    "./anim": "./src/anim.mjs",
+    "./subtitles": "./src/subtitles.mjs",
+    "./media": "./src/media.mjs",
+    "./srt": "./src/srt.mjs"
+  }
+}
