@@ -41,7 +41,7 @@ node bin/kasaneru.mjs inspect out/basic.mp4
 | `still <manifest> --frame N -o <png>` | Renders a single frame. Fast, because it draws only the pictures that frame needs |
 | `inspect <video>` | Reports duration, frame count, and volume, and whether the first frame is dark or the audio is clipping |
 | `inspect <video> --deep` | In addition to the above, looks for single frames with a broken picture (blank white, garbled) (`suspectFrames`). The first and last frames can only be compared with one neighbor, so when they differ greatly from it they are listed as a weak warning (`edgeFrames`; this cannot be told apart from a cut, so check by eye) |
-| `sheet <video> -o <png>` | Makes a contact sheet of frames for review. `--frames 0,120,240`, `--every N`, `--manifest <manifest>` (automatically picks frames just before and after clip and caption changes) |
+| `sheet <video> -o <png>` | Makes a contact sheet of frames for review. `--frames 0,120,240`, `--every N`, `--manifest <manifest>` (automatically picks frames just before and after clip and caption changes), `--cols N` (columns, default 4) |
 | `srt <manifest> -o <srt>` | Writes the captions as SRT (from `captions` layers; `--key props.captions` can point at another location) |
 | `captions <subtitle file> --fps N` | Converts SRT/ASS to JSON `[{from, to, text}]` (in frames) |
 | `probe <asset> [--fps N]` | Reports an asset's length (in frames), dimensions, and whether it has audio |
@@ -55,9 +55,11 @@ Main options for `render`:
 - `--props <file or JSON>` and `--set path=value` override the manifest's `props` (to make variants, such as different wording, from the same manifest)
 - `--concurrency N` is the number of pages drawn at once (`browser`, default 4)
 - `--encoder h264_videotoolbox` uses the Mac hardware encoder
+- `--crf N` sets the quality for `.mp4` with the default encoder and for `.webm`, where it is scaled to VP9's range (default 18; lower is higher quality and larger)
+- `--every-frame` draws a picture for every frame instead of drawing identical pictures only once (for checking)
 - `--audio-bitrate 256k` changes the audio bitrate (default is 192k for `.mp4` and 160k for `.webm`; it has no effect on `.mov`, which is uncompressed)
 - `--allow-missing-assets` renders even if a scene's assets cannot be loaded (see "Missing assets" below)
-- `--keep-work` keeps the working folder (the drawn pictures and the ffmpeg filter) instead of deleting it
+- `--keep-work` keeps the working folder (the drawn pictures and the ffmpeg filter) instead of deleting it. `--work <dir>` chooses where it goes (default: next to the output, `<output name>.work`)
 
 The result, a timing breakdown plus warnings, is written to standard output as JSON.
 
@@ -71,6 +73,8 @@ When an image in a scene drawn by `browser` cannot be loaded (the file does not 
 - Loads cancelled partway (such as a background image no longer needed in the next frame) are not counted as failures
 - Anything other than `<img>` is captured without waiting for it to load. Local files load immediately, so this has caused no real problems, but a background image may miss the capture, or a failure report may arrive too late. Use `<img>` for images that must be waited for
 - In-page errors in `scenes.page` scenes (`pageerror`) do not fail the render; they go into `warnings`
+
+### Requirements and cautions
 
 Requirements: Node 22, ffmpeg, Google Chrome (`browser`), Flutter (`flutter`). Run the tests with `npm test`.
 
@@ -115,6 +119,7 @@ Setting `"sequence": true` on a layer lines the clips up one after another (`fro
 | `crop` | Cuts out part of the asset `{x, y, width, height}` (in asset px). `x` and `y` can be keyframed (such as panning when converting to vertical video) |
 | `shake` | Shake `{amplitude, speed, from, durationInFrames, seed, decay}`. No random numbers are used, so every render produces the same picture |
 | `fadeIn` `fadeOut` | Opacity fades (in frames). Used on overlapping clips, they give a crossfade |
+| `audioFadeIn` `audioFadeOut` | Fades for the clip's own audio (in frames) |
 | `volume` | When set, the video's audio also plays at the same position (a number or keyframes). When not set, the clip is silent. Keyframe frames and mono handling are the same as for `audio` (frame numbers of the whole video, not counted from the start of the clip) |
 
 The following options apply to every clip when written on the layer, or to a single clip when written on that clip.
@@ -221,6 +226,7 @@ Keyframes are `{"keyframes": [[frame, value], ...], "easing": "linear"}`. `easin
 | `src/anim.mjs` | Functions that produce values from the frame |
 | `src/backends/browser.mjs` | Captures HTML/React scenes |
 | `src/backends/browser_page.mjs` | Captures in-page script scenes |
+| `src/backends/launch.mjs` `src/backends/deps.mjs` | Launches the browser (`KASANERU_BROWSER`); where to find the packages bundled with kasaneru for scenes that import them |
 | `src/backends/flutter.mjs` and `flutter_backend/` | Draws with Flutter |
 | `test/` | Automated tests. Uses assets with the frame number embedded in their brightness to check the content of each output frame |
 | `.github/workflows/` | Tests on every push (`test.yml`); npm publish and GitHub Release when a `v*` tag is pushed (`release.yml`) |

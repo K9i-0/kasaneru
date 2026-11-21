@@ -41,7 +41,7 @@ node bin/kasaneru.mjs inspect out/basic.mp4
 | `still <manifest> --frame N -o <png>` | 1コマだけ書き出す。その1コマに要る絵しか描かないので速い |
 | `inspect <動画>` | 尺・コマ数・音量と、先頭コマが暗くないか・音が振り切れていないかを報告する |
 | `inspect <動画> --deep` | 上に加えて、1コマだけ壊れた絵（真っ白・崩れ）を探す（`suspectFrames`）。先頭と最後のコマは片側としか比べられないので、隣と大きく違うときに弱い注意として挙げる（`edgeFrames`。カットとは区別できないので、見て確かめる） |
-| `sheet <動画> -o <png>` | 確認用のコマ一覧を作る。`--frames 0,120,240`、`--every N`、`--manifest <manifest>`（クリップや字幕の切り替わりの前後を自動で選ぶ） |
+| `sheet <動画> -o <png>` | 確認用のコマ一覧を作る。`--frames 0,120,240`、`--every N`、`--manifest <manifest>`（クリップや字幕の切り替わりの前後を自動で選ぶ）、`--cols N`（列数、既定は4） |
 | `srt <manifest> -o <srt>` | 字幕をSRTにする（`captions` の層から。`--key props.captions` で場所を指定もできる） |
 | `captions <字幕ファイル> --fps N` | SRT・ASSを `[{from, to, text}]`（コマ数）のJSONにする |
 | `probe <素材> [--fps N]` | 素材の長さ（コマ数）・大きさ・音声の有無を調べる |
@@ -55,9 +55,11 @@ node bin/kasaneru.mjs inspect out/basic.mp4
 - `--props <ファイルかJSON>` と `--set 場所=値` は、manifestの `props` を差し替える（同じmanifestから文言違いなどの変種を作る）
 - `--concurrency N` は同時に描くページ数（`browser`、既定4）
 - `--encoder h264_videotoolbox` はmacのハードウェアエンコーダを使う
+- `--crf N` は、既定のエンコーダでの `.mp4` と `.webm`（VP9の範囲に換算する）の画質（既定は18。小さいほど高画質でファイルが大きい）
+- `--every-frame` は、同じ絵を1回だけ描くのをやめて全コマ分の絵を描く（確認用）
 - `--audio-bitrate 256k` は音声のビットレートを変える（既定は `.mp4` が192k、`.webm` が160k。`.mov` は無圧縮なので効かない）
 - `--allow-missing-assets` は、シーンの素材が読めなくても書き出す（下の「読めない素材」）
-- `--keep-work` は作業用フォルダ（描いた絵とffmpegのフィルタ）を消さずに残す
+- `--keep-work` は作業用フォルダ（描いた絵とffmpegのフィルタ）を消さずに残す。`--work <dir>` で置き場所を指定できる（既定は出力の隣の `<出力名>.work`）
 
 結果は、所要時間の内訳と注意点をJSONで標準出力へ返す。
 
@@ -71,6 +73,8 @@ node bin/kasaneru.mjs inspect out/basic.mp4
 - 読み込みの途中で取り消されたもの（次のコマで要らなくなった背景画像など）は、失敗に数えない
 - `<img>` 以外は読み込みを待たずに撮っている。手元のファイルはすぐ読めるので実害は出ていないが、背景画像が撮影に間に合わない・失敗の報告が間に合わないことはありうる。確実に待たせたい画像は `<img>` で置く
 - `scenes.page` のシーンで起きたページ内のエラー（`pageerror`）は、失敗にはせず `warnings` に入れる
+
+### 必要なものと注意
 
 必要なもの: Node 22、ffmpeg、Google Chrome（`browser`）、Flutter（`flutter`）。テストは `npm test`。
 
@@ -115,6 +119,7 @@ node bin/kasaneru.mjs inspect out/basic.mp4
 | `crop` | 素材の一部を切り出す `{x, y, width, height}`（素材のpx）。`x` `y` はキーフレームにできる（縦動画化のパンなど） |
 | `shake` | 揺れ `{amplitude, speed, from, durationInFrames, seed, decay}`。乱数を使わないので、何度書き出しても同じ絵になる |
 | `fadeIn` `fadeOut` | 透明度のフェード（コマ数）。重なるクリップに使えばクロスフェードになる |
+| `audioFadeIn` `audioFadeOut` | クリップ自身の音声のフェード（コマ数） |
 | `volume` | 書くと、その動画の音声も同じ位置で鳴らす（数値かキーフレーム）。書かなければ無音。キーフレームのコマとモノラルの扱いは `audio` と同じ（クリップ先頭からではなく、動画全体のコマ番号） |
 
 次の指定は、層に書けば全クリップに、クリップに書けばそのクリップだけに効く。
@@ -221,6 +226,7 @@ node bin/kasaneru.mjs inspect out/basic.mp4
 | `src/anim.mjs` | フレームから値を作る関数 |
 | `src/backends/browser.mjs` | HTML/Reactのシーンを撮る |
 | `src/backends/browser_page.mjs` | ページ内スクリプトのシーンを撮る |
+| `src/backends/launch.mjs` `src/backends/deps.mjs` | ブラウザの起動（`KASANERU_BROWSER`）、シーンがimportするkasaneru同梱パッケージの探し場所 |
 | `src/backends/flutter.mjs` と `flutter_backend/` | Flutterで描く |
 | `test/` | 自動テスト。コマ番号を明るさに埋め込んだ素材で、出力の各コマの中身を判定する |
 | `.github/workflows/` | pushごとのテスト（`test.yml`）と、`v*` タグのpushでのnpm公開・GitHub Release作成（`release.yml`） |
