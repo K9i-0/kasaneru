@@ -584,4 +584,20 @@ test('in-page script scenes: a missing asset fails, an in-page error is a warnin
   const messages = run(manifest, ['--allow-missing-assets'], {backend: 'browser'}).json.warnings.map((w) => w.message).join('\n');
   assert.match(messages, /nai_page\.png/);
   assert.match(messages, /Error in the page: .*atokara/);
+
+  // Only files under the assets folder are served: one outside it is not handed to the page, and is reported.
+  writeFileSync(path.join(dir, 'outside.txt'), 'secret');
+  writeFileSync(path.join(dir, 'pg', 'inside.txt'), 'ok');
+  writeFileSync(path.join(dir, 'pg', 'fetch.mjs'), `export const scenes = {p: {
+    async setup(ctx) {
+      const get = async (url) => { const r = await fetch(url); return r.status + ':' + (r.ok ? await r.text() : ''); };
+      document.title = [await get(ctx.assets + 'inside.txt'), await get(ctx.assets + '%2e%2e/outside.txt')].join(' ');
+      if (document.title !== '200:ok 403:') throw new Error('served ' + document.title);
+    },
+    draw() {},
+  }};`);
+  const fenced = {composition: comp(3), assets: 'pg', scenes: {page: 'pg/fetch.mjs'}, layers: [{type: 'scene', id: 'pg', scene: 'p', page: true}]};
+  const out = run(fenced, [], {backend: 'browser', expectFail: true});
+  assert.match(out.stderr, /Asset is outside the assets folder .*outside\.txt/);
+  assert.doesNotMatch(out.stderr, /served /);
 });

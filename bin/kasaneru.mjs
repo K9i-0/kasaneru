@@ -16,7 +16,7 @@ import {formatProblems, validateManifest} from '../src/validate.mjs';
 const USAGE = `usage:
   kasaneru render <manifest.json> -o <out.mp4|.mov|.webm|.gif>   Render
         [--backend browser|flutter|none] [--frames A-B] [--concurrency N] [--props <file|json>] [--set a.b=value]...
-        [--encoder libx264|h264_videotoolbox] [--crf N] [--audio-bitrate 192k] [--every-frame] [--keep-work]
+        [--encoder libx264|h264_videotoolbox] [--crf N] [--audio-bitrate 192k] [--every-frame] [--keep-work] [--work <dir>]
         [--allow-missing-assets]
   kasaneru still <manifest.json> --frame N -o <out.png>          Render a single frame
   kasaneru check <manifest.json>                                 List the errors in the manifest (without rendering)

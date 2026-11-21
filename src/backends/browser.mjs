@@ -2,12 +2,12 @@
 import {mkdirSync, writeFileSync} from 'node:fs';
 import {writeFile} from 'node:fs/promises';
 import path from 'node:path';
-import {fileURLToPath, pathToFileURL} from 'node:url';
+import {pathToFileURL} from 'node:url';
 import {captionsScene} from '../captions.mjs';
+import {DEPENDENCY_PATHS, PACKAGE_DIR} from './deps.mjs';
 import {launchBrowser} from './launch.mjs';
 import {renderPageLayers} from './browser_page.mjs';
 
-const PACKAGE_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 // Upper limit for waiting on an image to load. Past it, the image is reported as one that could not be loaded.
 const IMAGE_TIMEOUT_MS = Number(process.env.KASANERU_IMAGE_TIMEOUT_MS) || 30000;
 
@@ -25,7 +25,7 @@ export async function renderScenes({manifest, manifestDir, sceneLayers, workDir,
     const modulePath = path.join(workDir, 'scene.bundle.mjs');
     await build({entryPoints: [scenePath], outfile: modulePath, bundle: true, format: 'esm', platform: 'node', jsx: 'automatic', logLevel: 'error',
       alias: {'kasaneru/anim': path.join(PACKAGE_DIR, 'src/anim.mjs')},
-      nodePaths: [path.join(PACKAGE_DIR, 'node_modules')],
+      nodePaths: DEPENDENCY_PATHS,
       define: {'import.meta.url': JSON.stringify(pathToFileURL(scenePath).href), 'process.env.NODE_ENV': '"production"'},
       banner: {js: "import {createRequire as __createRequire} from 'node:module';const require=__createRequire(import.meta.url);"}});
   mod = await import(pathToFileURL(modulePath).href);

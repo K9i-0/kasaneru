@@ -3,6 +3,25 @@
   "version": "0.0.1",
   "type": "module",
   "description": "Render video from a JSON manifest. ffmpeg cuts and composites video and audio; a rendering backend (browser or Flutter) draws text, shapes and 3D as images to layer on top",
+  "keywords": [
+    "video",
+    "ffmpeg",
+    "render",
+    "compositing",
+    "manifest",
+    "headless-chrome",
+    "playwright",
+    "react",
+    "threejs",
+    "flutter",
+    "captions",
+    "cli"
+  ],
+  "author": "K9i",
+  "homepage": "https://github.com/K9i-0/kasaneru#readme",
+  "bugs": {
+    "url": "https://github.com/K9i-0/kasaneru/issues"
+  },
   "repository": {
     "type": "git",
     "url": "git+https://github.com/K9i-0/kasaneru.git"
@@ -14,6 +33,7 @@
     "flutter_backend/pubspec.yaml",
     "README.md",
     "README.ja.md",
+    "CHANGELOG.md",
     "LICENSE"
   ],
   "bin": {
