@@ -2,6 +2,12 @@
 
 All notable changes to `kasaneru` are documented in this file.
 
+## [0.0.2] - 2026-11-21
+
+### Changed
+
+- Published by the release workflow through npm trusted publishing, so the package carries provenance. No functional changes from 0.0.1.
+
 ## [0.0.1] - 2026-11-21
 
 First public release.
