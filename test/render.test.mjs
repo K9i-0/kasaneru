@@ -601,3 +601,17 @@ test('in-page script scenes: a missing asset fails, an in-page error is a warnin
   assert.match(out.stderr, /Asset is outside the assets folder .*outside\.txt/);
   assert.doesNotMatch(out.stderr, /served /);
 });
+
+test('--help, --version and an unknown option', () => {
+  const help = spawnSync('node', [CLI, '--help'], {encoding: 'utf8'});
+  assert.equal(help.status, 0);
+  assert.match(help.stdout, /^usage:/);
+  const version = spawnSync('node', [CLI, '--version'], {encoding: 'utf8'});
+  assert.equal(version.status, 0);
+  assert.equal(version.stdout.trim(), JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version);
+  const bad = spawnSync('node', [CLI, 'check', 'x.json', '--bogus'], {encoding: 'utf8'});
+  assert.equal(bad.status, 2);
+  assert.match(bad.stderr, /--bogus/);
+  assert.match(bad.stderr, /usage:/);
+  assert.doesNotMatch(bad.stderr, /at parseArgs|node:internal/);
+});

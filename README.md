@@ -46,6 +46,7 @@ node bin/kasaneru.mjs inspect out/basic.mp4
 | `captions <subtitle file> --fps N` | Converts SRT/ASS to JSON `[{from, to, text}]` (in frames) |
 | `probe <asset> [--fps N]` | Reports an asset's length (in frames), dimensions, and whether it has audio |
 | `envelope <audio> --fps N` | Outputs the per-frame volume as an array (for lip sync and the like) |
+| `--help` / `--version` | Prints the usage or the version. An unknown option prints which one and the usage, and exits with code 2 |
 
 Main options for `render`:
 

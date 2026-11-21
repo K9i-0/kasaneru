@@ -46,6 +46,7 @@ node bin/kasaneru.mjs inspect out/basic.mp4
 | `captions <字幕ファイル> --fps N` | SRT・ASSを `[{from, to, text}]`（コマ数）のJSONにする |
 | `probe <素材> [--fps N]` | 素材の長さ（コマ数）・大きさ・音声の有無を調べる |
 | `envelope <音声> --fps N` | コマごとの音量を配列で出す（口パクなど） |
+| `--help` / `--version` | 使い方・版を表示する。知らない指定を渡すと、どれが違うかと使い方を出して終了コード2で終わる |
 
 `render` の主な指定:
 

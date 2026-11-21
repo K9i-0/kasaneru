@@ -14,6 +14,7 @@ import {readSubtitles, toFrames} from '../src/subtitles.mjs';
 import {formatProblems, validateManifest} from '../src/validate.mjs';
 
 const USAGE = `usage:
+  kasaneru --help | --version
   kasaneru render <manifest.json> -o <out.mp4|.mov|.webm|.gif>   Render
         [--backend browser|flutter|none] [--frames A-B] [--concurrency N] [--props <file|json>] [--set a.b=value]...
         [--encoder libx264|h264_videotoolbox] [--crf N] [--audio-bitrate 192k] [--every-frame] [--keep-work] [--work <dir>]
@@ -28,31 +29,46 @@ const USAGE = `usage:
   kasaneru probe <file> [--fps N]                                Report the length and dimensions of an asset
   kasaneru envelope <audio> --fps N                              Output the per-frame volume as JSON (for lip sync)`;
 
-const {values: opt, positionals} = parseArgs({
-  allowPositionals: true,
-  options: {
-    out: {type: 'string', short: 'o'},
-    backend: {type: 'string', default: 'browser'},
-    'every-frame': {type: 'boolean', default: false},
-    concurrency: {type: 'string', default: '4'},
-    encoder: {type: 'string', default: 'libx264'},
-    crf: {type: 'string', default: '18'},
-    'audio-bitrate': {type: 'string'},
-    'allow-missing-assets': {type: 'boolean', default: false},
-    work: {type: 'string'},
-    frames: {type: 'string'},
-    frame: {type: 'string'},
-    'keep-work': {type: 'boolean', default: false},
-    fps: {type: 'string'},
-    props: {type: 'string'},
-    set: {type: 'string', multiple: true},
-    deep: {type: 'boolean', default: false},
-    every: {type: 'string'},
-    manifest: {type: 'string'},
-    cols: {type: 'string', default: '4'},
-    key: {type: 'string'},
-  },
-});
+let parsed;
+try {
+  parsed = parseArgs({
+    allowPositionals: true,
+    options: {
+      help: {type: 'boolean', short: 'h', default: false},
+      version: {type: 'boolean', short: 'v', default: false},
+      out: {type: 'string', short: 'o'},
+      backend: {type: 'string', default: 'browser'},
+      'every-frame': {type: 'boolean', default: false},
+      concurrency: {type: 'string', default: '4'},
+      encoder: {type: 'string', default: 'libx264'},
+      crf: {type: 'string', default: '18'},
+      'audio-bitrate': {type: 'string'},
+      'allow-missing-assets': {type: 'boolean', default: false},
+      work: {type: 'string'},
+      frames: {type: 'string'},
+      frame: {type: 'string'},
+      'keep-work': {type: 'boolean', default: false},
+      fps: {type: 'string'},
+      props: {type: 'string'},
+      set: {type: 'string', multiple: true},
+      deep: {type: 'boolean', default: false},
+      every: {type: 'string'},
+      manifest: {type: 'string'},
+      cols: {type: 'string', default: '4'},
+      key: {type: 'string'},
+    },
+  });
+} catch (e) {
+  // An unknown option or a missing value: say which, then show the usage (not a stack trace).
+  console.error(`${e.message}\n\n${USAGE}`);
+  process.exit(2);
+}
+const {values: opt, positionals} = parsed;
+if (opt.help) { console.log(USAGE); process.exit(0); }
+if (opt.version) {
+  console.log(JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')).version);
+  process.exit(0);
+}
 const [command, target] = positionals;
 const fail = (message, code = 2) => { console.error(message); process.exit(code); };
 const print = (value) => console.log(JSON.stringify(value, null, 2));

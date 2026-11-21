@@ -2,6 +2,12 @@
 
 All notable changes to `kasaneru` are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- `--help` / `-h` and `--version` / `-v` work; an unknown option prints the usage instead of a stack trace.
+
 ## [0.0.2] - 2026-11-21
 
 ### Changed
