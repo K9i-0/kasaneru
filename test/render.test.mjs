@@ -499,11 +499,12 @@ test('missing images stop the render (<img>, background image, image inside SVG,
   assert.match(css.stderr, /nai_bg\.png/);
   assert.match(css.stderr, /nai_svg\.png/);
   process.env.KASANERU_IMAGE_TIMEOUT_MS = '400';
-  // The timeout is waited for only once per page (drawing 12 frames on one page does not wait 12 times).
+  // The timeout is waited for only once per page (drawing 40 frames on one page does not wait 40 times).
+  // Waiting on every frame would take 40 x 0.4 = 16 s on top of the browser start-up, so 14 s still tells the two apart and leaves room for a slow CI machine.
   const started = performance.now();
-  const slow = run({composition: comp(12), scenes: {browser: 'img/scene.mjs'}, layers: [{type: 'scene', id: 'a', scene: 'slow'}]}, ['--concurrency', '1'], {backend: 'browser', expectFail: true});
-  assert.match(slow.stderr, /did not finish loading within 0\.4 seconds: http:.*slow\.png \(in 12 pictures\)/);
-  assert.ok(performance.now() - started < 4000, `a timed-out image is not waited for again on every frame (${((performance.now() - started) / 1000).toFixed(1)}s)`);
+  const slow = run({composition: comp(40), scenes: {browser: 'img/scene.mjs'}, layers: [{type: 'scene', id: 'a', scene: 'slow'}]}, ['--concurrency', '1'], {backend: 'browser', expectFail: true});
+  assert.match(slow.stderr, /did not finish loading within 0\.4 seconds: http:.*slow\.png \(in 40 pictures\)/);
+  assert.ok(performance.now() - started < 14000, `a timed-out image is not waited for again on every frame (${((performance.now() - started) / 1000).toFixed(1)}s)`);
   assert.deepEqual(render('fine').json.warnings, []);
   const allowed = render('missing', ['--allow-missing-assets']);
   assert.ok(allowed.json.warnings.some((w) => w.message.includes('nai.png')), 'with --allow-missing-assets it becomes a warning and the video is rendered');
