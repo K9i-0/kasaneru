@@ -14,6 +14,16 @@ It has only been verified on macOS. It has not been run on Windows or Linux.
 
 ## Usage
 
+Install from npm (or run it with `npx kasaneru`):
+
+```bash
+npm install kasaneru
+npx kasaneru check  manifest.json
+npx kasaneru render manifest.json -o out.mp4
+```
+
+The example is not in the npm package. To try it, clone the repository:
+
 ```bash
 git clone https://github.com/K9i-0/kasaneru.git
 cd kasaneru && npm install
@@ -64,6 +74,10 @@ When an image in a scene drawn by `browser` cannot be loaded (the file does not 
 
 Requirements: Node 22, ffmpeg, Google Chrome (`browser`), Flutter (`flutter`). Run the tests with `npm test`.
 
+**Only render manifests you trust.** A manifest names scene files (`scenes.browser`, `scenes.page`, `scenes.flutter`), and kasaneru runs them: on your machine as Node code, in the browser, or inside `flutter test`. Rendering someone else's manifest runs their code with your permissions. Asset paths are also read from wherever the manifest points.
+
+The `flutter` backend writes its generated entry point and build cache into kasaneru's own `flutter_backend/` folder, so the folder kasaneru is installed in must be writable (a local `npm install` is; a system-wide install owned by root is not).
+
 The browser can be changed with the environment variable `KASANERU_BROWSER` (the path to an executable, or a name such as `chrome-beta`, `msedge`, or `chromium`).
 
 ## manifest
@@ -78,7 +92,7 @@ All times are written as frame counts (integers) at the composition's fps. Paths
 | `audio` | Array of audio tracks |
 | `master` | Audio mastering. `limiter` (ceiling, 0–1) and `loudnorm` (`i` `tp` `lra`) |
 | `scenes` | Where the scenes are. `browser` (HTML/React), `page` (in-page script), `flutter` (Dart file) |
-| `assets` | Folder of assets loaded by `page` scenes |
+| `assets` | Folder of assets loaded by `page` scenes (default: the manifest's folder). Only files under this folder are served to the page; a request outside it fails as a missing asset |
 | `fonts` | Font files to load (`family` `file`, plus `weight` `style` if needed). For fonts not installed on the system |
 | `props` | Values passed to scenes |
 
@@ -209,6 +223,7 @@ Keyframes are `{"keyframes": [[frame, value], ...], "easing": "linear"}`. `easin
 | `src/backends/browser_page.mjs` | Captures in-page script scenes |
 | `src/backends/flutter.mjs` and `flutter_backend/` | Draws with Flutter |
 | `test/` | Automated tests. Uses assets with the frame number embedded in their brightness to check the content of each output frame |
+| `.github/workflows/` | Tests on every push (`test.yml`); npm publish and GitHub Release when a `v*` tag is pushed (`release.yml`) |
 | `examples/basic/` | An example that runs without external assets (crossfade, filters, rotation, rounded corners, blend modes, captions) |
 
 ## Differences between rendering backends

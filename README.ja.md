@@ -14,6 +14,16 @@ manifest（JSON）から動画を書き出すツール。名前は「重ねる�
 
 ## 使い方
 
+npmから入れる（`npx kasaneru` でそのまま実行もできる）:
+
+```bash
+npm install kasaneru
+npx kasaneru check  manifest.json
+npx kasaneru render manifest.json -o out.mp4
+```
+
+例はnpmのパッケージに入っていない。試すときはリポジトリをクローンする:
+
 ```bash
 git clone https://github.com/K9i-0/kasaneru.git
 cd kasaneru && npm install
@@ -64,6 +74,10 @@ node bin/kasaneru.mjs inspect out/basic.mp4
 
 必要なもの: Node 22、ffmpeg、Google Chrome（`browser`）、Flutter（`flutter`）。テストは `npm test`。
 
+**信頼できるmanifestだけを描画すること。** manifestはシーンのファイル（`scenes.browser` `scenes.page` `scenes.flutter`）を指し、kasaneruはそれを実行する（手元のNodeのコードとして、ブラウザの中で、または `flutter test` の中で）。他人のmanifestを描画すると、その人のコードが自分の権限で動く。素材のパスも、manifestが指す場所からそのまま読む。
+
+`flutter` は、生成したエントリポイントとビルドのキャッシュをkasaneru自身の `flutter_backend/` フォルダに書く。そのため、kasaneruを入れたフォルダに書き込める必要がある（ローカルの `npm install` なら書ける。root所有のシステム全体へのインストールでは書けない）。
+
 ブラウザは環境変数 `KASANERU_BROWSER` で変えられる（実行ファイルのパスか、`chrome-beta` `msedge` `chromium` などの名前）。
 
 ## manifest
@@ -78,7 +92,7 @@ node bin/kasaneru.mjs inspect out/basic.mp4
 | `audio` | 音声トラックの配列 |
 | `master` | 音声の仕上げ。`limiter`（上限、0〜1）と `loudnorm`（`i` `tp` `lra`） |
 | `scenes` | シーンの場所。`browser`（HTML/React）、`page`（ページ内スクリプト）、`flutter`（Dartファイル） |
-| `assets` | `page` のシーンから読む素材のフォルダ |
+| `assets` | `page` のシーンから読む素材のフォルダ（省略時はmanifestのあるフォルダ）。ページに渡すのはこのフォルダの下のファイルだけで、外のファイルを読もうとすると「読めない素材」として失敗する |
 | `fonts` | 読み込むフォントファイル（`family` `file`、必要なら `weight` `style`）。システムにないフォントを使うとき |
 | `props` | シーンへ渡す値 |
 
@@ -209,6 +223,7 @@ node bin/kasaneru.mjs inspect out/basic.mp4
 | `src/backends/browser_page.mjs` | ページ内スクリプトのシーンを撮る |
 | `src/backends/flutter.mjs` と `flutter_backend/` | Flutterで描く |
 | `test/` | 自動テスト。コマ番号を明るさに埋め込んだ素材で、出力の各コマの中身を判定する |
+| `.github/workflows/` | pushごとのテスト（`test.yml`）と、`v*` タグのpushでのnpm公開・GitHub Release作成（`release.yml`） |
 | `examples/basic/` | 外部の素材なしで動く例（クロスフェード・フィルタ・回転・角丸・合成モード・字幕） |
 
 ## 描画バックエンドの違い
