@@ -204,9 +204,12 @@ export function validateManifest(manifest, manifestDir, {backend = 'browser'} = 
     if (track.pitch !== undefined && !isNum(track.pitch)) err(`${where}.pitch`, 'A number of semitones (example: -4) is required');
     if (track.group !== undefined && typeof track.group !== 'string') err(`${where}.group`, 'A group name (string) is required');
     if (track.duck !== undefined) {
-      if (typeof track.duck !== 'object' || track.duck.by === undefined) err(`${where}.duck`, 'Must be {by: group name, to, attack, release, lead, tail}');
+      if (typeof track.duck !== 'object' || track.duck.by === undefined) err(`${where}.duck`, 'Must be {by: group name, to, attack, release, lead, tail, threshold}');
       else {
-        keys(track.duck, ['by', 'to', 'attack', 'release', 'lead', 'tail'], `${where}.duck`);
+        keys(track.duck, ['by', 'to', 'attack', 'release', 'lead', 'tail', 'threshold'], `${where}.duck`);
+        if (track.duck.threshold !== undefined && track.duck.threshold !== false && !(isNum(track.duck.threshold) && track.duck.threshold <= 0)) {
+          err(`${where}.duck.threshold`, 'A number <= 0 (dB, example: -35) or false is required');
+        }
         const groups = [track.duck.by].flat();
         if (!audio.some((o) => o !== track && groups.includes(o.group))) warn(`${where}.duck`, `No track is in group "${groups.join(', ')}", so the volume is not lowered`);
       }

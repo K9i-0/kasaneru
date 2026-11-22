@@ -185,7 +185,7 @@ For more elaborate captions, such as per-speaker colors, write them in a `scene`
 | `from` `durationInFrames` `trimBefore` | Where it plays, for how long, and how much to skip at the start |
 | `playbackRate` `loop` `reverse` | Speed (pitch is preserved), repeat, reverse playback |
 | `pitch` | Changes pitch in semitones (length is preserved) |
-| `group` `duck` | `duck: {by: group name, to, attack, release, lead, tail}` lowers the volume only while tracks in that group are playing (BGM under voice) |
+| `group` `duck` | `duck: {by: group name, to, attack, release, lead, tail, threshold}` lowers the volume only while tracks in that group are actually audible (BGM under voice). `to` is a multiplier on `volume` (default `0.35`; e.g., `volume: 0.3` with `to: 0.5` gives `0.15`). Silent stretches below `threshold` (dB, default `-35`) return to full volume; set `threshold: false` to duck across the entire track span |
 | `volume` | A number or `[[frame, value], ...]` (`{keyframes, easing}` also works). Keyframes are joined by straight lines, so for a step, put the old value on the frame just before |
 | `fadeIn` `fadeOut` | Fades (in frames) |
 

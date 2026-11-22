@@ -4,8 +4,10 @@
 //   - duck on an audio track becomes keyframes that lower the volume only while the other tracks are playing
 import path from 'node:path';
 import {probe} from './ffmpeg.mjs';
+import {envelope} from './media.mjs';
 
 const IMAGE = /\.(png|jpe?g|webp|bmp|gif)$/i;
+const DEFAULT_DUCK_THRESHOLD_DB = -35;
 
 // Length of an asset (in frames at the composition fps).
 export function mediaFrames(file, fps, kind = 'video') {
@@ -62,15 +64,50 @@ export function resolveManifest(source, manifestDir) {
   }
   const N = manifest.composition.durationInFrames;
 
-  // Ducking: collect the spans where tracks in the groups listed in by are playing, and lower the volume only during them.
+  // Ducking: collect the spans where tracks in the groups listed in by are actually audible, and lower the volume only during them.
+  // With threshold: false, use the whole placement span [from, from + length] of each track instead of inspecting the audio waveform.
+  const envCache = new Map();
+  const getEnvelope = (file) => {
+    if (!envCache.has(file)) envCache.set(file, envelope(file, fps));
+    return envCache.get(file);
+  };
+  const trackAudibleSpans = (o, thresholdDb) => {
+    const start = o.from ?? 0;
+    const len = trackLength(o) ?? Math.max(0, N - start);
+    if (len <= 0) return [];
+    if (thresholdDb === false) return [[start, start + len]];
+    const env = getEnvelope(abs(o.src));
+    if (env.length === 0) return [];
+    const amp = 10 ** (thresholdDb / 20);
+    const trim = o.trimBefore ?? 0;
+    const rate = o.playbackRate ?? 1;
+    const loop = o.loop === true || typeof o.loop === 'number';
+    const spans = [];
+    let on = -1;
+    for (let k = 0; k < len; k++) {
+      let srcFrame = Math.floor(trim + k * rate);
+      if (o.reverse) srcFrame = Math.floor(trim + (len - 1 - k) * rate);
+      if (loop) srcFrame = ((srcFrame % env.length) + env.length) % env.length;
+      const audible = srcFrame >= 0 && srcFrame < env.length && env[srcFrame] >= amp;
+      if (audible && on < 0) on = k;
+      else if (!audible && on >= 0) {
+        spans.push([start + on, start + k]);
+        on = -1;
+      }
+    }
+    if (on >= 0) spans.push([start + on, start + len]);
+    return spans;
+  };
+
   for (const t of tracks) {
     if (!t.duck) continue;
-    const {by, to = 0.35, attack = 4, release = 8, lead = 3, tail = 2} = t.duck;
+    const {by, to = 0.35, attack = 4, release = 8, lead = 3, tail = 2, threshold = DEFAULT_DUCK_THRESHOLD_DB} = t.duck;
     const groups = Array.isArray(by) ? by : [by];
     const base = t.volume ?? 1;
     const ranges = tracks
       .filter((o) => o !== t && groups.includes(o.group))
-      .map((o) => [Math.max(0, (o.from ?? 0) - lead), Math.min(N, (o.from ?? 0) + (trackLength(o) ?? N) + tail)])
+      .flatMap((o) => trackAudibleSpans(o, threshold))
+      .map(([a, b]) => [Math.max(0, a - lead), Math.min(N, b + tail)])
       .sort((a, b) => a[0] - b[0])
       .reduce((merged, r) => {
         const last = merged[merged.length - 1];

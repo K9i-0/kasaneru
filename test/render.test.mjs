@@ -369,6 +369,26 @@ test('automatic ducking (duck) and pitch', () => {
   }).out, 5);
   assert.ok(ducked[2] < ducked[0] - 15, `lowered only during second 2, where the voice is: ${ducked.map((v) => v.toFixed(0))}`);
   near(ducked[4], ducked[0], 1.5, 'returns once the voice ends');
+  // A voice track that is audible only in second 1 and silent in seconds 2-4:
+  // default ducking restores the BGM during the silent stretch, while threshold: false ducks the whole track span.
+  const voiceWithSilence = path.join(dir, 'voice_silence.wav');
+  execFileSync('ffmpeg', ['-v', 'error', '-y', '-f', 'lavfi', '-i', 'sine=frequency=440:duration=1', '-f', 'lavfi', '-i', 'anullsrc=r=48000:cl=mono:d=3', '-filter_complex', '[0:a][1:a]concat=n=2:v=0:a=1', voiceWithSilence]);
+  const byWave = loudness(run({
+    composition: comp(120), layers: [{type: 'video', src: 'gray.png'}],
+    audio: [
+      {src: 'tone.wav', loop: true, volume: 1, duck: {by: 'voice', to: 0.1, attack: 0, release: 0, lead: 0, tail: 0}},
+      {src: 'voice_silence.wav', from: 0, durationInFrames: 120, volume: 0.0001, group: 'voice'},
+    ],
+  }).out, 4);
+  assert.ok(byWave[0] < byWave[2] - 15, `audible second 0 is ducked while silent second 2 recovers: ${byWave.map((v) => v.toFixed(0))}`);
+  const bySpan = loudness(run({
+    composition: comp(120), layers: [{type: 'video', src: 'gray.png'}],
+    audio: [
+      {src: 'tone.wav', loop: true, volume: 1, duck: {by: 'voice', to: 0.1, attack: 0, release: 0, lead: 0, tail: 0, threshold: false}},
+      {src: 'voice_silence.wav', from: 0, durationInFrames: 120, volume: 0.0001, group: 'voice'},
+    ],
+  }).out, 4);
+  near(bySpan[2], bySpan[0], 1.5, 'threshold: false ducks across the whole track span including silence');
   const high = run({composition: comp(60), layers: [{type: 'video', src: 'gray.png'}], audio: [{src: 'tone.wav', pitch: 12}]}).out;
   const raw = execFileSync('ffmpeg', ['-v', 'error', '-i', high, '-ac', '1', '-ar', '8000', '-f', 'f32le', '-'], {maxBuffer: 1 << 26});
   const s = new Float32Array(raw.buffer, raw.byteOffset, raw.length / 4).subarray(2000, 10000);

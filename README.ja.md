@@ -185,7 +185,7 @@ node bin/kasaneru.mjs inspect out/basic.mp4
 | `from` `durationInFrames` `trimBefore` | 鳴らす位置、長さ、頭を飛ばす量 |
 | `playbackRate` `loop` `reverse` | 速度（音程は保つ）、繰り返し、逆再生 |
 | `pitch` | 音程を半音単位で変える（長さは保つ） |
-| `group` `duck` | `duck: {by: グループ名, to, attack, release, lead, tail}` で、そのグループのトラックが鳴っている間だけ音量を下げる（BGMを声の下へ） |
+| `group` `duck` | `duck: {by: グループ名, to, attack, release, lead, tail, threshold}` で、そのグループのトラックが実際に鳴っている間だけ音量を下げる（BGMを声の下へ）。`to` は元の `volume` に対する倍率（既定 `0.35`。例: `volume: 0.3` に `to: 0.5` で `0.15`）。`threshold`（dB、既定 `-35`）を下回る無音区間では音量を戻し、`threshold: false` にするとトラックの配置区間全体を下げる |
 | `volume` | 数値か `[[コマ, 値], ...]`（`{keyframes, easing}` でも書ける）。キーフレームの間は直線でつながるので、段差は直前のコマに元の値を置く |
 | `fadeIn` `fadeOut` | フェード（コマ数） |
 
