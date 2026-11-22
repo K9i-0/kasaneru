@@ -2,6 +2,17 @@
 
 All notable changes to `kasaneru` are documented in this file.
 
+## [0.0.4] - 2026-11-23
+
+### Added
+
+- `audio[].duck.threshold` (dB, default `-35`; or `false` to duck across the entire track span).
+
+### Changed
+
+- Automatic ducking (`duck`) now detects audible spans from the audio waveform of grouped tracks and restores volume during silent stretches instead of ducking across the entire track duration.
+- Clarified in README (`README.md` / `README.ja.md`) that `duck.to` is a multiplier applied to `volume`.
+
 ## [0.0.3] - 2026-11-21
 
 ### Fixed
