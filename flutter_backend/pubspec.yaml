@@ -1,7 +1,7 @@
 name: kasaneru_flutter
 description: Flutter rendering backend for kasaneru. Captures widgets as transparent PNGs inside flutter test.
 publish_to: none
-version: 0.0.4
+version: 0.0.5
 environment:
   sdk: ^3.8.0
 dependencies:

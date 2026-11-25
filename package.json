@@ -1,6 +1,6 @@
 {
   "name": "kasaneru",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "type": "module",
   "description": "Render video from a JSON manifest. ffmpeg cuts and composites video and audio; a rendering backend (browser or Flutter) draws text, shapes and 3D as images to layer on top",
   "keywords": [

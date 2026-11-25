@@ -2,7 +2,7 @@
 
 All notable changes to `kasaneru` are documented in this file.
 
-## [Unreleased]
+## [0.0.5] - 2026-11-25
 
 ### Fixed
 
