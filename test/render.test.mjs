@@ -1,7 +1,7 @@
 // Render tests. Builds assets with the frame number embedded in their brightness, and tells from the brightness which source frame each output frame came from.
 //   node --test test/render.test.mjs
 import assert from 'node:assert/strict';
-import {execFileSync, spawnSync} from 'node:child_process';
+import {execFileSync, spawn, spawnSync} from 'node:child_process';
 import {existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import path from 'node:path';
@@ -635,4 +635,97 @@ test('--help, --version and an unknown option', () => {
   assert.match(bad.stderr, /--bogus/);
   assert.match(bad.stderr, /usage:/);
   assert.doesNotMatch(bad.stderr, /at parseArgs|node:internal/);
+});
+
+// A scene whose pictures are opaque is captured as RGB, while the blank used for the frames outside a range (and for gaps) is RGBA.
+// Until 0.0.4 that change of pixel format made ffmpeg rebuild the filter graph, which dropped the picture just before each change.
+test('scene layers: --frames ranges and still match the full render', {skip: !chrome && 'Chrome not found'}, () => {
+  mkdirSync(path.join(dir, 'rg'), {recursive: true});
+  writeFileSync(path.join(dir, 'rg', 'scene.mjs'), `
+    const box = (v) => '<div style="position:absolute;inset:0;background:rgb(' + v + ',' + v + ',' + v + ')"></div>';
+    export const scenes = {
+      // A different opaque gray on every frame.
+      ramp: {render: (f) => box(40 + 4 * f)},
+      // Shown only for frames 20-29 (a gap before and after).
+      gap: {key: (f) => (f >= 20 && f < 30 ? f : null), render: (f) => box(40 + 4 * f)},
+    };`);
+  const manifest = {composition: comp(40), background: '#000000', scenes: {browser: 'rg/scene.mjs'}, layers: [{type: 'scene', id: 'ramp', scene: 'ramp'}]};
+  const full = lumas(run(manifest, [], {backend: 'browser'}).out);
+  assert.equal(full.length, 40);
+  for (const f of [0, 39]) assert.ok(full[f] > BG + 15, `full render frame ${f} is drawn (${full[f].toFixed(1)})`);
+  for (const [a, b] of [[10, 19], [0, 0], [25, 25], [39, 39], [30, 39]]) {
+    const part = lumas(run(manifest, ['--frames', `${a}-${b}`], {backend: 'browser'}).out);
+    assert.equal(part.length, b - a + 1, `--frames ${a}-${b} frame count`);
+    part.forEach((y, k) => near(y, full[a + k], 2, `--frames ${a}-${b}: frame ${a + k} equals the full render`));
+  }
+  for (const f of [0, 20, 39]) {
+    const {out} = run(manifest, ['still', '--frame', String(f)], {ext: 'png', backend: 'browser'});
+    const raw = execFileSync('ffmpeg', ['-v', 'error', '-i', out, '-vf', 'scale=out_color_matrix=bt709:out_range=tv,format=yuv420p,extractplanes=y', '-f', 'rawvideo', '-']);
+    near(raw.reduce((s, x) => s + x, 0) / raw.length, full[f], 2, `still --frame ${f} equals the full render`);
+  }
+  // The last picture before a gap is kept in a full render too.
+  const gap = lumas(run({...manifest, layers: [{type: 'scene', id: 'gap', scene: 'gap'}]}, [], {backend: 'browser'}).out);
+  near(gap[19], BG, 1, 'gap: frame 19 is background');
+  for (const f of [20, 25, 29]) near(gap[f], full[f], 2, `gap: frame ${f} is drawn`);
+  near(gap[30], BG, 1, 'gap: frame 30 is background');
+  // The same with one picture per frame (--every-frame), and in a range of it.
+  const gapManifest = {...manifest, layers: [{type: 'scene', id: 'gap', scene: 'gap'}]};
+  lumas(run(gapManifest, ['--every-frame'], {backend: 'browser'}).out).forEach((y, f) => near(y, gap[f], 2, `--every-frame: frame ${f}`));
+  lumas(run(gapManifest, ['--every-frame', '--frames', '25-29'], {backend: 'browser'}).out).forEach((y, k) => near(y, gap[25 + k], 2, `--every-frame --frames 25-29: frame ${25 + k}`));
+});
+
+// Runs the CLI with a time limit. On timeout the whole process group (node and ffmpeg) is killed so that a hang fails the test.
+function runWithTimeout(manifest, extra, {ext = 'mp4', backend = 'none', timeoutMs = 120000} = {}) {
+  const id = ++count;
+  const file = path.join(dir, `m${id}.json`);
+  writeFileSync(file, JSON.stringify(manifest));
+  const out = path.join(dir, `o${id}.${ext}`);
+  return new Promise((resolve, reject) => {
+    const p = spawn('node', [CLI, 'render', file, '-o', out, '--backend', backend, ...extra], {detached: true, stdio: ['ignore', 'pipe', 'pipe']});
+    let stderr = '';
+    p.stderr.on('data', (d) => { stderr += d; });
+    p.stdout.resume();
+    const timer = setTimeout(() => {
+      try { process.kill(-p.pid, 'SIGKILL'); } catch { /* already gone */ }
+      reject(new Error(`kasaneru did not finish within ${timeoutMs / 1000} s (${extra.join(' ')})`));
+    }, timeoutMs);
+    p.on('exit', (code) => {
+      clearTimeout(timer);
+      if (code === 0) resolve(out);
+      else reject(new Error(`kasaneru failed (${code}):\n${stderr}`));
+    });
+  });
+}
+const pcm = (file) => {
+  const raw = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-map', '0:a', '-ac', '2', '-ar', '48000', '-f', 'f32le', '-'], {maxBuffer: 1 << 30});
+  return new Float32Array(raw.buffer, raw.byteOffset, raw.length / 4);
+};
+
+test('a range of a long composition with many audio tracks finishes and has the same audio as the full render', {skip: !chrome && 'Chrome not found', timeout: 600000}, async () => {
+  const sub = path.join(dir, 'many');
+  mkdirSync(sub, {recursive: true});
+  for (let i = 0; i < 25; i++) ff('-f', 'lavfi', '-i', `sine=frequency=${200 + 20 * i}:duration=6:sample_rate=24000`, '-ac', '1', path.join(sub, `n${i}.wav`));
+  ff('-f', 'lavfi', '-i', 'sine=frequency=330:duration=200:sample_rate=44100', '-ac', '2', '-c:a', 'libmp3lame', path.join(sub, 'bgm.mp3'));
+  writeFileSync(path.join(sub, 'scene.mjs'), `export const scenes = {bg: {key: () => 'one', render: () => '<div style="position:absolute;inset:0;background:#406080"></div>'}};`);
+  const N = 5763;
+  const wave = (a, b) => Array.from({length: b - a}, (_, k) => [a + k, +(0.3 + 0.2 * Math.sin(k / 7)).toFixed(3)]);
+  const audio = [
+    ...Array.from({length: 25}, (_, i) => ({src: `many/n${i}.wav`, from: 60 + 225 * i})),
+    ...Array.from({length: 7}, (_, j) => ({src: 'many/bgm.mp3', from: 820 * j, trimBefore: 300 * j, durationInFrames: 820, volume: wave(820 * j, 820 * j + 820)})),
+  ];
+  const manifest = {composition: comp(N), background: '#000000', scenes: {browser: 'many/scene.mjs'}, layers: [{type: 'scene', id: 'bg', scene: 'bg'}], audio};
+  const full = pcm(await runWithTimeout(manifest, [], {ext: 'mov', backend: 'browser', timeoutMs: 300000}));
+  for (const [a, b] of [[3000, 3001], [380, 381]]) {
+    const out = await runWithTimeout(manifest, ['--frames', `${a}-${b}`], {ext: 'mov', backend: 'browser'});
+    assert.equal(JSON.parse(cli('inspect', out)).video.frames, b - a + 1, `--frames ${a}-${b}: frame count`);
+    const part = pcm(out);
+    const perFrame = (48000 / FPS) * 2;
+    assert.equal(part.length, (b - a + 1) * perFrame, `--frames ${a}-${b}: audio length`);
+    const ref = full.subarray(a * perFrame, (b + 1) * perFrame);
+    let signal = 0, diff = 0;
+    for (let k = 0; k < part.length; k++) { signal += ref[k] ** 2; diff += (part[k] - ref[k]) ** 2; }
+    assert.ok(signal > 0, `--frames ${a}-${b}: the span has audio`);
+    const db = 10 * Math.log10(diff / signal + 1e-20);
+    assert.ok(db < -60, `--frames ${a}-${b}: difference from the full render is ${db.toFixed(1)} dB`);
+  }
 });

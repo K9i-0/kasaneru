@@ -428,8 +428,14 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
       if (!scene) continue;
       let i;
       let enable = null;
+      // The pictures of one scene input do not all have the same pixel format: a capture with no transparent pixel can come out as RGB,
+      // while one with transparency (and the transparent blank used for gaps) is RGBA. By default ffmpeg rebuilds the whole filter graph
+      // whenever the format of an input changes. That drops the last picture before each change (a black frame at the end of a --frames
+      // range, a black still) and, with many audio inputs in the same graph, can deadlock the render. -reinit_filter 0 keeps the graph,
+      // and scale, which converts each frame by its own format, must be the first filter so that every picture is read correctly.
+      const sceneInput = ['-reinit_filter', '0'];
       if (scene.mode === 'sequence') {
-        i = addInput('-framerate', String(fps), '-i', scene.pattern);
+        i = addInput(...sceneInput, '-framerate', String(fps), '-i', scene.pattern);
       } else {
         if (scene.segments.length === 0) continue;
         // One input per layer. The times at which the picture changes are given in a concat list.
@@ -462,15 +468,15 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
         }
         const list = path.join(workDir, `${layer.id}.ffconcat`);
         writeFileSync(list, lines.join('\n') + '\n');
-        i = addInput('-f', 'concat', '-safe', '0', '-i', list);
+        i = addInput(...sceneInput, '-f', 'concat', '-safe', '0', '-i', list);
       }
       // A layer with region is a small picture covering only that area.
       // A layer with canvas is a picture of any size, placed with x and y. x and y can be keyframed, in which case ffmpeg moves the picture.
       const pos = (v, fallback) => (v === undefined ? fallback : isKeyframed(v) ? `'${keyframeExpr(v.keyframes, v.easing, `(t*${fps})`)}'` : v);
       const moving = isKeyframed(layer.x) || isKeyframed(layer.y);
       // Overlaying an input whose pictures change only sparsely as it is can make the sync logic of ffmpeg delay the layer below by one frame.
-      // Convert it to a constant-interval frame sequence with fps before overlaying.
-      graph.push(`[${i}:v]fps=${fps},scale=${TO_WORK},format=${layer.opaque ? 'yuv420p' : moving ? 'yuva444p' : 'yuva420p'}[s${i}]`);
+      // Convert it to a constant-interval frame sequence with fps before overlaying (after scale, which has to come first; see above).
+      graph.push(`[${i}:v]scale=${TO_WORK},format=${layer.opaque ? 'yuv420p' : moving ? 'yuva444p' : 'yuva420p'},fps=${fps}[s${i}]`);
       overlay(`s${i}`, pos(layer.x, layer.region?.x ?? 0), pos(layer.y, layer.region?.y ?? 0), {moving, enable, blend: layer.blend});
     }
   }

@@ -2,6 +2,12 @@
 
 All notable changes to `kasaneru` are documented in this file.
 
+## [Unreleased]
+
+### Fixed
+
+- A `scene` layer whose pictures change between opaque and transparent (an opaque scene next to the transparent blank used outside a `--frames` range or in a gap) no longer makes ffmpeg rebuild the filter graph mid-render. This fixes a black `still`, a black last frame in `render --frames A-B` (and a black `--frames N-N`), an opaque scene with gaps not being drawn at all, and `render --frames` hanging when the manifest has many audio tracks.
+
 ## [0.0.4] - 2026-11-23
 
 ### Added
