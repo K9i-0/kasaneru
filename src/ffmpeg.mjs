@@ -571,6 +571,7 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
 export function runFfmpeg(args) {
   return new Promise((resolve, reject) => {
     const p = spawn('ffmpeg', args, {stdio: ['ignore', 'inherit', 'inherit']});
+    p.on('error', (e) => reject(new Error(e.code === 'ENOENT' ? 'ffmpeg not found. Install ffmpeg and make sure it is on the PATH.' : `Cannot run ffmpeg: ${e.message}`)));
     p.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg exited with ${code}`))));
   });
 }

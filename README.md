@@ -60,7 +60,7 @@ Main options for `render`:
 - `--every-frame` draws a picture for every frame instead of drawing identical pictures only once (for checking)
 - `--audio-bitrate 256k` changes the audio bitrate (default is 192k for `.mp4` and 160k for `.webm`; it has no effect on `.mov`, which is uncompressed)
 - `--allow-missing-assets` renders even if a scene's assets cannot be loaded (see "Missing assets" below)
-- `--keep-work` keeps the working folder (the drawn pictures and the ffmpeg filter) instead of deleting it. `--work <dir>` chooses where it goes (default: next to the output, `<output name>.work`)
+- `--keep-work` keeps the working folder (the drawn pictures and the ffmpeg filter) instead of deleting it. `--work <dir>` chooses where it goes (default: next to the output, `<output name>.work`). The working folder is emptied before the render and deleted after it, so kasaneru only uses a folder it made itself or an empty one; pointing it at another folder that has files in it fails without deleting anything
 
 The result, a timing breakdown plus warnings, is written to standard output as JSON.
 

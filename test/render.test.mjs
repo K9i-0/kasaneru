@@ -218,6 +218,86 @@ test('check lists errors with their locations', () => {
   assert.equal(refused.status, 1, 'a manifest with errors is not rendered');
 });
 
+test('check reports malformed values with their locations instead of crashing or accepting them', () => {
+  const layer = {type: 'video', color: '#000000'};
+  const cases = [
+    [{audio: [null]}, 'audio[0]'],
+    [{audio: [{src: 'notmedia.txt'}]}, 'audio[0].src'],
+    [{audio: [{src: 'tone.wav', duck: null}]}, 'audio[0].duck'],
+    [{audio: [{src: 'tone.wav', duck: {by: 'voice', to: 'low'}}]}, 'audio[0].duck.to'],
+    [{layers: [{type: 'video', clips: [null]}]}, 'layers[0].clips[0]'],
+    [{layers: [null]}, 'layers[0]'],
+    [{layers: [{...layer, shake: {amplitude: 'big'}}]}, 'layers[0].shake.amplitude'],
+    [{layers: [{...layer, shake: null}]}, 'layers[0].shake'],
+    [{layers: [{...layer, chromaKey: {color: '#00ff00', similarity: 'a'}}]}, 'layers[0].chromaKey.similarity'],
+    [{layers: [{...layer, crop: null}]}, 'layers[0].crop'],
+    [{layers: [{type: 'adjust', grain: 0.2, region: null}]}, 'layers[0].region'],
+    [{layers: [{type: 'captions', items: [], style: null}]}, 'layers[0].style'],
+    [{fonts: {}}, 'fonts'],
+    [{fonts: [null]}, 'fonts[0]'],
+    [{composition: {...comp(10), durationFrames: 9}}, 'composition.durationFrames'],
+    [{composition: null}, 'composition'],
+    [{master: null}, 'master'],
+    [{master: {loudnorm: 'x'}}, 'master.loudnorm'],
+    [{master: {loudnorm: {i: 'loud'}}}, 'master.loudnorm.i'],
+    [{scenes: 'scene.mjs'}, 'scenes'],
+    [{scenes: {browser: 5}}, 'scenes.browser'],
+    [{props: 5}, 'props'],
+  ];
+  writeFileSync(path.join(dir, 'notmedia.txt'), 'not a media file');
+  for (const [part, expected] of cases) {
+    const r = run({composition: comp(10), layers: [layer], ...part}, ['check'], {expectFail: true});
+    assert.equal(r.status, 1, `${expected}: exits with 1 (stderr: ${r.stderr.slice(0, 200)})`);
+    assert.ok(r.json, `${expected}: prints JSON, not a stack trace (stderr: ${r.stderr.slice(0, 200)})`);
+    const where = r.json.errors.map((e) => e.where);
+    assert.ok(where.includes(expected), `reports ${expected} (reported: ${where.join(', ')})`);
+  }
+  const ok = run({composition: comp(10), layers: [{...layer, shake: {amplitude: 4, decay: false}, chromaKey: {color: '#00ff00', similarity: 0.2}}], master: {limiter: 0.9, loudnorm: {i: -14}}, props: {title: 'a'}, audio: [{src: 'tone.wav', duck: {by: 'voice', to: 0.5}}]}, ['check']);
+  assert.equal(ok.json.ok, true);
+});
+
+test('the working folder: a folder with files that kasaneru did not make is never deleted', () => {
+  const manifest = {composition: comp(5), layers: [{type: 'video', color: '#000000'}]};
+  const precious = path.join(dir, 'precious');
+  mkdirSync(precious);
+  writeFileSync(path.join(precious, 'keep.txt'), 'keep');
+  const refused = run(manifest, ['--work', precious], {expectFail: true});
+  assert.equal(refused.status, 1);
+  assert.match(refused.stderr, /was not made by kasaneru/);
+  assert.equal(readFileSync(path.join(precious, 'keep.txt'), 'utf8'), 'keep');
+  // The default folder (<output name>.work) is protected in the same way.
+  const id = count + 1;
+  mkdirSync(path.join(dir, `o${id}.work`));
+  writeFileSync(path.join(dir, `o${id}.work`, 'keep.txt'), 'keep');
+  assert.equal(run(manifest, [], {expectFail: true}).status, 1);
+  assert.ok(existsSync(path.join(dir, `o${id}.work`, 'keep.txt')));
+  // An empty folder is used, and a folder kept by --keep-work is used again by the next render.
+  const empty = path.join(dir, 'emptywork');
+  mkdirSync(empty);
+  run(manifest, ['--work', empty, '--keep-work']);
+  assert.ok(existsSync(path.join(empty, 'filter.txt')), 'the kept folder holds the ffmpeg filter');
+  run(manifest, ['--work', empty]);
+  assert.ok(!existsSync(empty), 'without --keep-work the folder is deleted after the render');
+});
+
+test('numeric options are checked, and a missing ffmpeg is reported in words', () => {
+  const file = path.join(dir, 'numeric.json');
+  writeFileSync(file, JSON.stringify({composition: comp(5), layers: [{type: 'video', color: '#000000'}]}));
+  const cli = (args, env = process.env) => spawnSync(process.execPath, [CLI, ...args], {encoding: 'utf8', env});
+  for (const [name, value] of [['--crf', 'abc'], ['--crf', '60'], ['--concurrency', '0'], ['--concurrency', '1.5'], ['--cols', '0'], ['--every', 'x']]) {
+    const r = cli(['render', file, '-o', path.join(dir, 'numeric.mp4'), '--backend', 'none', name, value]);
+    assert.equal(r.status, 2, `${name} ${value} is refused`);
+    assert.match(r.stderr, new RegExp(`^${name} must be`));
+    assert.doesNotMatch(r.stderr, /node:internal|    at /);
+  }
+  for (const args of [['check', file], ['render', file, '-o', path.join(dir, 'numeric.mp4'), '--backend', 'none']]) {
+    const r = cli(args, {...process.env, PATH: path.join(dir, 'no-such-bin')});
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /^ffmpeg and ffprobe not found/);
+    assert.doesNotMatch(r.stderr, /ENOENT|node:internal/);
+  }
+});
+
 test('inspect reports duration, frame count, and a dark first frame', () => {
   const {out} = run({composition: comp(30), layers: [{type: 'video', src: 'src.mp4'}], audio: [{src: 'tone.wav'}]});
   const report = JSON.parse(execFileSync('node', [CLI, 'inspect', out], {encoding: 'utf8'}));

@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 // kasaneru: renders a video from a manifest.
-import {existsSync, mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {spawnSync} from 'node:child_process';
+import {existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync} from 'node:fs';
 import path from 'node:path';
 import {parseArgs} from 'node:util';
 import {expandCaptions} from '../src/captions.mjs';
@@ -76,6 +77,24 @@ const COMMANDS = ['render', 'still', 'check', 'inspect', 'sheet', 'srt', 'captio
 if (!COMMANDS.includes(command) || !target) fail(USAGE);
 if (!['browser', 'flutter', 'none'].includes(opt.backend)) fail('--backend must be one of browser / flutter / none');
 const needFps = () => { const fps = Number(opt.fps); if (!(fps > 0)) fail('--fps is required: pass the fps of the composition'); return fps; };
+// Options that take a number: say which one is wrong here instead of letting ffmpeg or the backend fail on it later.
+const needNumber = (name, {integer = false, min = 0, max = Infinity} = {}) => {
+  if (opt[name] === undefined) return undefined;
+  const v = Number(opt[name]);
+  if (opt[name].trim() === '' || !Number.isFinite(v) || (integer && !Number.isInteger(v)) || v < min || v > max) {
+    fail(`--${name} must be ${integer ? 'an integer' : 'a number'} ${max === Infinity ? `of ${min} or more` : `from ${min} to ${max}`}: ${opt[name]}`);
+  }
+  return v;
+};
+const concurrency = needNumber('concurrency', {integer: true, min: 1});
+const crf = needNumber('crf', {min: 0, max: 51});
+const cols = needNumber('cols', {integer: true, min: 1});
+const every = needNumber('every', {integer: true, min: 1});
+// Everything except reading a subtitle file runs ffmpeg or ffprobe. Without them, say so (not a spawn ENOENT stack trace).
+if (command !== 'captions') {
+  const absent = ['ffmpeg', 'ffprobe'].filter((tool) => spawnSync(tool, ['-version'], {stdio: 'ignore'}).error);
+  if (absent.length > 0) fail(`${absent.join(' and ')} not found. Install ffmpeg (it includes ffprobe) and make sure it is on the PATH.`, 1);
+}
 const needFile = (p) => { const full = path.resolve(p); if (!existsSync(full)) fail(`File not found: ${full}`, 1); return full; };
 
 // Read the manifest, apply the props overrides (--props / --set), and validate it.
@@ -135,15 +154,18 @@ if (command === 'sheet') {
   const video = needFile(target);
   const total = inspectVideo(video).video.frames;
   let frames;
-  if (opt.frames) frames = opt.frames.split(',').map(Number);
+  if (opt.frames) {
+    if (!/^\d+(,\d+)*$/.test(opt.frames)) fail(`--frames takes frame numbers separated by commas (example: 0,120,240): ${opt.frames}`);
+    frames = opt.frames.split(',').map(Number);
+  }
   else if (opt.manifest) frames = boundaryFrames(prepare(loadManifest(opt.manifest)));
   else {
-    const step = Number(opt.every) > 0 ? Number(opt.every) : Math.max(1, Math.floor(total / 12));
+    const step = every ?? Math.max(1, Math.floor(total / 12));
     frames = Array.from({length: Math.ceil(total / step)}, (_, i) => i * step);
   }
   frames = [...new Set(frames.filter((f) => Number.isInteger(f) && f >= 0 && f < total))].sort((a, b) => a - b);
   mkdirSync(path.dirname(path.resolve(opt.out)), {recursive: true});
-  print(contactSheet(video, frames, path.resolve(opt.out), {cols: Number(opt.cols)}));
+  print(contactSheet(video, frames, path.resolve(opt.out), {cols}));
   process.exit(0);
 }
 
@@ -188,9 +210,20 @@ const format = still ? 'png' : path.extname(out).slice(1).toLowerCase();
 if (!still && !['mp4', 'mov', 'webm', 'gif'].includes(format)) fail('The output must be one of .mp4 / .mov / .webm / .gif');
 if (opt['audio-bitrate'] !== undefined && !/^\d+(\.\d+)?[kM]?$/.test(opt['audio-bitrate'])) fail('--audio-bitrate is written like 192k or 256000');
 
+// The working folder is emptied before the render and deleted after it, so only ever use a folder kasaneru made itself
+// (it leaves a marker file in it) or an empty one. Never delete a folder that already holds someone's files.
 const workDir = path.resolve(opt.work ?? out.replace(/\.[^.]+$/, '') + '.work');
-rmSync(workDir, {recursive: true, force: true});
+const WORK_MARKER = '.kasaneru-work';
+if (existsSync(workDir)) {
+  const ours = statSync(workDir).isDirectory() && (existsSync(path.join(workDir, WORK_MARKER)) || readdirSync(workDir).length === 0);
+  if (!ours) {
+    fail(`The working folder already exists and was not made by kasaneru, so it is left alone: ${workDir}\n`
+      + `kasaneru deletes its working folder. ${opt.work ? 'Pass a new or empty folder to --work.' : 'Pass --work <dir> with a new or empty folder, or move that folder away.'}`, 1);
+  }
+  rmSync(workDir, {recursive: true, force: true});
+}
 mkdirSync(workDir, {recursive: true});
+writeFileSync(path.join(workDir, WORK_MARKER), '');
 mkdirSync(path.dirname(out), {recursive: true});
 
 const t0 = performance.now();
@@ -202,7 +235,7 @@ if (opt.backend !== 'none' && sceneLayers.length > 0) {
   const result = await backend.renderScenes({
     manifest, manifestDir, sceneLayers, workDir, range,
     everyFrame: opt['every-frame'],
-    concurrency: Number(opt.concurrency),
+    concurrency,
   });
   scenes = result.scenes;
   backendTimings = result.timings;
@@ -217,8 +250,13 @@ if (opt.backend !== 'none' && sceneLayers.length > 0) {
   problems.warnings.push(...missing);
 }
 const t1 = performance.now();
-const args = buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder: opt.encoder, crf: opt.crf, audioBitrate: opt['audio-bitrate'], workDir, range, still, format});
-await runFfmpeg(args);
+const args = buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder: opt.encoder, crf, audioBitrate: opt['audio-bitrate'], workDir, range, still, format});
+try {
+  await runFfmpeg(args);
+} catch (e) {
+  // ffmpeg has already printed what went wrong. The working folder is kept so that the filter can be looked at.
+  fail(`${e.message}\nThe working folder was kept: ${workDir}`, 1);
+}
 const t2 = performance.now();
 // Delete the working folder unless it is wanted for inspection (--keep-work).
 if (!opt['keep-work']) rmSync(workDir, {recursive: true, force: true});

@@ -21,6 +21,7 @@ export function validateManifest(manifest, manifestDir, {backend = 'browser'} = 
   const warn = (where, message) => warnings.push({where, message});
   const isInt = (v) => Number.isInteger(v);
   const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+  const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
   const keys = (obj, allowed, where) => {
     for (const k of Object.keys(obj)) if (!allowed.includes(k)) err(`${where}.${k}`, `Unknown field. Allowed fields: ${allowed.join(', ')}`);
   };
@@ -40,12 +41,18 @@ export function validateManifest(manifest, manifestDir, {backend = 'browser'} = 
     if (!Array.isArray(v) && v.easing !== undefined && !easingNames.includes(v.easing)) err(`${where}.easing`, `Must be one of ${easingNames.join(', ')}`);
   };
   const numOrKeyframes = (v, where) => { if (!isNum(v)) keyframes(v, where); };
+  // Numeric fields of a small options object (shake, chromaKey, duck, loudnorm).
+  const numbers = (obj, names, where, {min = -Infinity} = {}) => {
+    for (const k of names) if (obj[k] !== undefined && !(isNum(obj[k]) && obj[k] >= min)) err(`${where}.${k}`, min === -Infinity ? 'A number is required' : `A number of ${min} or more is required`);
+  };
   const blendMode = (v, where) => { if (v !== undefined && !BLEND_MODES[v]) err(where, `Must be one of ${Object.keys(BLEND_MODES).join(', ')}`); };
 
   if (manifest === null || typeof manifest !== 'object' || Array.isArray(manifest)) return {errors: [{where: '', message: 'The manifest must be an object'}], warnings};
   keys(manifest, TOP, 'manifest');
 
-  const c = manifest.composition ?? {};
+  if (manifest.composition !== undefined && !isObj(manifest.composition)) err('composition', 'Must be {width, height, fps, durationInFrames}');
+  const c = isObj(manifest.composition) ? manifest.composition : {};
+  keys(c, ['width', 'height', 'fps', 'durationInFrames'], 'composition');
   for (const k of ['width', 'height']) if (!isInt(c[k]) || c[k] <= 0) err(`composition.${k}`, 'A positive integer is required');
   // durationInFrames can be omitted (it is set to the end of the latest-ending clip or audio track).
   if (c.durationInFrames !== undefined && (!isInt(c.durationInFrames) || c.durationInFrames <= 0)) err('composition.durationInFrames', 'A positive integer is required (omit it to have it set automatically)');
@@ -84,8 +91,11 @@ export function validateManifest(manifest, manifestDir, {backend = 'browser'} = 
     if (o.align !== undefined && !(Array.isArray(o.align) && o.align.length === 2 && o.align.every((v) => isNum(v) && v >= 0 && v <= 1))) err(`${where}.align`, 'Must be [horizontal, vertical], each between 0 and 1 (0.5 is the center)');
     if (o.flip !== undefined && !['h', 'v', 'hv', 'vh'].includes(o.flip)) err(`${where}.flip`, 'Must be one of h (horizontal) / v (vertical) / hv');
     if (o.chromaKey !== undefined) {
-      if (typeof o.chromaKey !== 'object' || !/^#[0-9a-fA-F]{6}$/.test(o.chromaKey.color ?? '')) err(`${where}.chromaKey`, 'Must be {color: "#RRGGBB", similarity, blend}');
-      else keys(o.chromaKey, ['color', 'similarity', 'blend'], `${where}.chromaKey`);
+      if (!isObj(o.chromaKey) || !/^#[0-9a-fA-F]{6}$/.test(o.chromaKey.color ?? '')) err(`${where}.chromaKey`, 'Must be {color: "#RRGGBB", similarity, blend}');
+      else {
+        keys(o.chromaKey, ['color', 'similarity', 'blend'], `${where}.chromaKey`);
+        numbers(o.chromaKey, ['similarity', 'blend'], `${where}.chromaKey`, {min: 0});
+      }
     }
     if (o.corners !== undefined) {
       const four = (c) => Array.isArray(c) && c.length === 4 && c.every((p) => Array.isArray(p) && p.length === 2 && p.every(isNum));
@@ -106,7 +116,8 @@ export function validateManifest(manifest, manifestDir, {backend = 'browser'} = 
   if (!Array.isArray(manifest.layers) || manifest.layers.length === 0) err('layers', 'At least one layer is required');
   (Array.isArray(manifest.layers) ? manifest.layers : []).forEach((layer, li) => {
     const where = `layers[${li}]`;
-    if (layer?.type === 'video') {
+    if (!isObj(layer)) return err(where, 'A layer must be an object with a type (video / scene / captions / adjust)');
+    if (layer.type === 'video') {
       keys(layer, VIDEO_LAYER, where);
       visual(layer, where);
       if (layer.clips !== undefined && (layer.src !== undefined || layer.color !== undefined)) err(where, 'Write either clips or src / color, not both');
@@ -115,18 +126,25 @@ export function validateManifest(manifest, manifestDir, {backend = 'browser'} = 
       if (!Array.isArray(clips) || clips.length === 0) return err(`${where}.clips`, 'At least one clip is required');
       clips.forEach((clip, ci) => {
         const cw = layer.clips ? `${where}.clips[${ci}]` : where;
+        if (!isObj(clip)) return err(cw, 'A clip must be an object with src or color');
         if (layer.clips) keys(clip, CLIP, cw);
         if ((clip.src === undefined) === (clip.color === undefined)) err(cw, 'Write exactly one of src (video or still image) or color (solid color)');
         else if (clip.color !== undefined) { if (!/^#[0-9a-fA-F]{6}$/.test(clip.color)) err(`${cw}.color`, 'Must be in the form #RRGGBB'); }
         else file(clip.src, `${cw}.src`);
         if (clip.crop !== undefined) {
           const c2 = clip.crop;
-          if (typeof c2 !== 'object' || !isInt(c2.width) || !isInt(c2.height)) err(`${cw}.crop`, 'Must be {x, y, width, height} (in asset px)');
+          if (!isObj(c2) || !isInt(c2.width) || !isInt(c2.height) || c2.width <= 0 || c2.height <= 0) err(`${cw}.crop`, 'Must be {x, y, width, height} (in asset px)');
           else for (const k of ['x', 'y']) if (c2[k] !== undefined) numOrKeyframes(c2[k], `${cw}.crop.${k}`);
         }
         if (clip.shake !== undefined) {
-          if (typeof clip.shake !== 'object') err(`${cw}.shake`, 'Must be {amplitude, speed, from, durationInFrames, seed, decay}');
-          else keys(clip.shake, ['amplitude', 'speed', 'from', 'durationInFrames', 'seed', 'decay'], `${cw}.shake`);
+          if (!isObj(clip.shake)) err(`${cw}.shake`, 'Must be {amplitude, speed, from, durationInFrames, seed, decay}');
+          else {
+            keys(clip.shake, ['amplitude', 'speed', 'from', 'durationInFrames', 'seed', 'decay'], `${cw}.shake`);
+            numbers(clip.shake, ['amplitude', 'speed', 'seed'], `${cw}.shake`);
+            if (clip.shake.from !== undefined) frame(clip.shake.from, `${cw}.shake.from`);
+            if (clip.shake.durationInFrames !== undefined) frame(clip.shake.durationInFrames, `${cw}.shake.durationInFrames`, {min: 1});
+            if (clip.shake.decay !== undefined && typeof clip.shake.decay !== 'boolean') err(`${cw}.shake.decay`, 'Must be true or false');
+          }
           if (clip.blend ?? layer.blend) err(`${cw}.shake`, 'A blend mode and shake cannot be used together');
         }
         if (clip.reverse !== undefined && typeof clip.reverse !== 'boolean') err(`${cw}.reverse`, 'Must be true or false');
@@ -138,7 +156,7 @@ export function validateManifest(manifest, manifestDir, {backend = 'browser'} = 
         for (const k of ['fadeIn', 'fadeOut', 'audioFadeIn', 'audioFadeOut']) if (clip[k] !== undefined) frame(clip[k], `${cw}.${k}`);
         if (clip.volume !== undefined) numOrKeyframes(clip.volume, `${cw}.volume`);
       });
-    } else if (layer?.type === 'scene') {
+    } else if (layer.type === 'scene') {
       keys(layer, SCENE_LAYER, where);
       if (typeof layer.id !== 'string' || !/^[A-Za-z0-9_-]+$/.test(layer.id)) err(`${where}.id`, 'A name made of letters, digits, _ and - is required');
       else if (sceneIds.has(layer.id)) err(`${where}.id`, `Duplicate id "${layer.id}"`);
@@ -148,7 +166,7 @@ export function validateManifest(manifest, manifestDir, {backend = 'browser'} = 
         const r = layer[k];
         if (r === undefined) continue;
         const need = k === 'region' ? ['x', 'y', 'width', 'height'] : ['width', 'height'];
-        if (typeof r !== 'object' || need.some((n) => !isInt(r[n]))) err(`${where}.${k}`, `${need.join(', ')} must be integers`);
+        if (!isObj(r) || need.some((n) => !isInt(r[n]))) err(`${where}.${k}`, `${need.join(', ')} must be integers`);
       }
       for (const k of ['x', 'y']) if (layer[k] !== undefined && !isInt(layer[k])) keyframes(layer[k], `${where}.${k}`);
       blendMode(layer.blend, `${where}.blend`);
@@ -156,20 +174,22 @@ export function validateManifest(manifest, manifestDir, {backend = 'browser'} = 
       const kind = layer.page ? 'page' : backend === 'flutter' ? 'flutter' : 'browser';
       if (backend !== 'none') {
         if (layer.page && backend === 'flutter') err(where, 'page scenes can only be drawn by browser');
-        const ref = manifest.scenes?.[kind];
+        const ref = isObj(manifest.scenes) ? manifest.scenes[kind] : undefined;
         if (!ref) err('scenes', `scenes.${kind} is missing (used by ${where})`);
-        else if (kind !== 'flutter' || ref.endsWith('.dart')) file(ref, `scenes.${kind}`);
+        else if (typeof ref === 'string' && (kind !== 'flutter' || ref.endsWith('.dart'))) file(ref, `scenes.${kind}`);
       }
-    } else if (layer?.type === 'adjust') {
+    } else if (layer.type === 'adjust') {
       keys(layer, ADJUST_LAYER, where);
       timing(layer, where);
       const r = layer.region;
-      if (r !== undefined && (typeof r !== 'object' || ['x', 'y', 'width', 'height'].some((n) => !isInt(r[n])))) err(`${where}.region`, 'x, y, width, height must be integers');
+      if (r !== undefined && (!isObj(r) || ['x', 'y', 'width', 'height'].some((n) => !isInt(r[n])))) err(`${where}.region`, 'x, y, width, height must be integers');
       else if (r && (r.width % 2 || r.height % 2 || r.x % 2 || r.y % 2)) err(`${where}.region`, 'Position and size must be even');
       if (layer.filter !== undefined) { try { parseFilter(layer.filter); } catch (e) { err(`${where}.filter`, e.message); } }
       for (const k of ['vignette', 'grain']) if (layer[k] !== undefined && (!isNum(layer[k]) || layer[k] < 0 || layer[k] > 1)) err(`${where}.${k}`, 'A number between 0 and 1 is required');
+      if (layer.seed !== undefined && !isInt(layer.seed)) err(`${where}.seed`, 'An integer is required');
+      if (layer.radius !== undefined && (!isNum(layer.radius) || layer.radius < 0)) err(`${where}.radius`, 'A number of 0 or more (px) is required');
       if (layer.filter === undefined && !layer.vignette && !layer.grain) err(where, 'At least one of filter / vignette / grain is required');
-    } else if (layer?.type === 'captions') {
+    } else if (layer.type === 'captions') {
       keys(layer, ['type', 'id', 'src', 'items', 'style'], where);
       if (backend === 'flutter') err(where, 'captions layers can only be drawn by browser');
       if ((layer.src === undefined) === (layer.items === undefined)) err(where, 'Write exactly one of src (.srt / .ass) or items');
@@ -181,7 +201,10 @@ export function validateManifest(manifest, manifestDir, {backend = 'browser'} = 
         if (!Array.isArray(layer.items)) err(`${where}.items`, 'Must be an array of [{from, to, text}]');
         else layer.items.forEach((c, ci) => { if (!isInt(c?.from) || !isInt(c?.to) || c.to <= c.from || typeof c.text !== 'string') err(`${where}.items[${ci}]`, 'from and to (in frames, from < to) and text are required'); });
       }
-      if (layer.style !== undefined) keys(layer.style, CAPTION_STYLE, `${where}.style`);
+      if (layer.style !== undefined) {
+        if (!isObj(layer.style)) err(`${where}.style`, `Must be an object. Allowed fields: ${CAPTION_STYLE.join(', ')}`);
+        else keys(layer.style, CAPTION_STYLE, `${where}.style`);
+      }
       if (layer.id !== undefined) {
         if (sceneIds.has(layer.id)) err(`${where}.id`, `Duplicate id "${layer.id}"`);
         sceneIds.add(layer.id);
@@ -194,9 +217,14 @@ export function validateManifest(manifest, manifestDir, {backend = 'browser'} = 
   const audio = manifest.audio === undefined ? [] : Array.isArray(manifest.audio) ? manifest.audio : [manifest.audio];
   audio.forEach((track, ai) => {
     const where = `audio[${ai}]`;
+    if (!isObj(track)) return err(where, 'An audio track must be an object with src');
     keys(track, AUDIO, where);
     const full = file(track.src, `${where}.src`);
-    if (full && !probe(full).some((s) => s.codec_type === 'audio')) err(`${where}.src`, 'The file has no audio');
+    if (full) {
+      let streams = null;
+      try { streams = probe(full); } catch { err(`${where}.src`, 'Cannot read the file as audio or video'); }
+      if (streams && !streams.some((s) => s.codec_type === 'audio')) err(`${where}.src`, 'The file has no audio');
+    }
     timing(track, where);
     if (track.volume !== undefined) numOrKeyframes(track.volume, `${where}.volume`);
     for (const k of ['fadeIn', 'fadeOut']) if (track[k] !== undefined) frame(track[k], `${where}.${k}`);
@@ -204,25 +232,45 @@ export function validateManifest(manifest, manifestDir, {backend = 'browser'} = 
     if (track.pitch !== undefined && !isNum(track.pitch)) err(`${where}.pitch`, 'A number of semitones (example: -4) is required');
     if (track.group !== undefined && typeof track.group !== 'string') err(`${where}.group`, 'A group name (string) is required');
     if (track.duck !== undefined) {
-      if (typeof track.duck !== 'object' || track.duck.by === undefined) err(`${where}.duck`, 'Must be {by: group name, to, attack, release, lead, tail, threshold}');
+      const by = isObj(track.duck) ? [track.duck.by].flat() : [];
+      if (by.length === 0 || !by.every((g) => typeof g === 'string')) err(`${where}.duck`, 'Must be {by: group name, to, attack, release, lead, tail, threshold}');
       else {
         keys(track.duck, ['by', 'to', 'attack', 'release', 'lead', 'tail', 'threshold'], `${where}.duck`);
+        numbers(track.duck, ['to', 'attack', 'release', 'lead', 'tail'], `${where}.duck`, {min: 0});
         if (track.duck.threshold !== undefined && track.duck.threshold !== false && !(isNum(track.duck.threshold) && track.duck.threshold <= 0)) {
           err(`${where}.duck.threshold`, 'A number <= 0 (dB, example: -35) or false is required');
         }
         const groups = [track.duck.by].flat();
-        if (!audio.some((o) => o !== track && groups.includes(o.group))) warn(`${where}.duck`, `No track is in group "${groups.join(', ')}", so the volume is not lowered`);
+        if (!audio.some((o) => o !== track && groups.includes(o?.group))) warn(`${where}.duck`, `No track is in group "${groups.join(', ')}", so the volume is not lowered`);
       }
       if (track.volume !== undefined && !isNum(track.volume)) err(`${where}.duck`, 'duck and volume keyframes cannot be used together');
     }
   });
 
-  if (manifest.master !== undefined) {
+  if (manifest.master !== undefined && !isObj(manifest.master)) err('master', 'Must be {limiter, loudnorm}');
+  else if (manifest.master !== undefined) {
     keys(manifest.master, ['limiter', 'loudnorm'], 'master');
+    const ln = manifest.master.loudnorm;
+    // true uses the default targets.
+    if (ln !== undefined && typeof ln !== 'boolean' && !isObj(ln)) err('master.loudnorm', 'Must be {i, tp, lra} (or true for the defaults)');
+    else if (isObj(ln)) {
+      keys(ln, ['i', 'tp', 'lra'], 'master.loudnorm');
+      numbers(ln, ['i', 'tp', 'lra'], 'master.loudnorm');
+    }
     if (manifest.master.limiter !== undefined && !(isNum(manifest.master.limiter) && manifest.master.limiter > 0 && manifest.master.limiter <= 1)) err('master.limiter', 'A number greater than 0 and at most 1 is required');
   }
   if (manifest.assets !== undefined) file(manifest.assets, 'assets');
-  (manifest.fonts ?? []).forEach((f, i) => {
+  if (manifest.scenes !== undefined) {
+    if (!isObj(manifest.scenes)) err('scenes', 'Must be {browser, page, flutter} (paths to the scene files)');
+    else {
+      keys(manifest.scenes, ['browser', 'page', 'flutter'], 'scenes');
+      for (const [k, v] of Object.entries(manifest.scenes)) if (typeof v !== 'string') err(`scenes.${k}`, 'A file path (string) is required');
+    }
+  }
+  if (manifest.props !== undefined && !isObj(manifest.props)) err('props', 'Must be an object (the values passed to scenes)');
+  if (manifest.fonts !== undefined && !Array.isArray(manifest.fonts)) err('fonts', 'Must be an array of {family, file, weight, style}');
+  (Array.isArray(manifest.fonts) ? manifest.fonts : []).forEach((f, i) => {
+    if (!isObj(f)) return err(`fonts[${i}]`, 'Must be {family, file, weight, style}');
     if (typeof f?.family !== 'string') err(`fonts[${i}].family`, 'A font family name is required');
     file(f?.file, `fonts[${i}].file`);
   });
