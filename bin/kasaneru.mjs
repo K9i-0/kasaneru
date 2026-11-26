@@ -214,6 +214,9 @@ if (opt['audio-bitrate'] !== undefined && !/^\d+(\.\d+)?[kM]?$/.test(opt['audio-
 // (it leaves a marker file in it) or an empty one. Never delete a folder that already holds someone's files.
 const workDir = path.resolve(opt.work ?? out.replace(/\.[^.]+$/, '') + '.work');
 const WORK_MARKER = '.kasaneru-work';
+if (!path.relative(workDir, out).startsWith('..') && !path.isAbsolute(path.relative(workDir, out))) {
+  fail(`The output is inside the working folder, which is deleted after the render: ${workDir}\nPass a different folder to --work.`);
+}
 if (existsSync(workDir)) {
   const ours = statSync(workDir).isDirectory() && (existsSync(path.join(workDir, WORK_MARKER)) || readdirSync(workDir).length === 0);
   if (!ours) {
@@ -236,6 +239,11 @@ if (opt.backend !== 'none' && sceneLayers.length > 0) {
     manifest, manifestDir, sceneLayers, workDir, range,
     everyFrame: opt['every-frame'],
     concurrency,
+  }).catch((e) => {
+    // A missing tool is reported in words. Anything else (an error thrown by a scene, for example) keeps its stack trace.
+    if (e.code !== 'TOOL_NOT_FOUND') throw e;
+    rmSync(workDir, {recursive: true, force: true});
+    return fail(e.message, 1);
   });
   scenes = result.scenes;
   backendTimings = result.timings;

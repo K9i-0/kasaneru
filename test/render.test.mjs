@@ -271,6 +271,10 @@ test('the working folder: a folder with files that kasaneru did not make is neve
   writeFileSync(path.join(dir, `o${id}.work`, 'keep.txt'), 'keep');
   assert.equal(run(manifest, [], {expectFail: true}).status, 1);
   assert.ok(existsSync(path.join(dir, `o${id}.work`, 'keep.txt')));
+  // The finished video would be deleted together with the folder.
+  const inside = spawnSync(process.execPath, [CLI, 'render', refused.file, '-o', path.join(dir, 'inwork', 'a.mp4'), '--backend', 'none', '--work', path.join(dir, 'inwork')], {encoding: 'utf8'});
+  assert.equal(inside.status, 2);
+  assert.match(inside.stderr, /inside the working folder/);
   // An empty folder is used, and a folder kept by --keep-work is used again by the next render.
   const empty = path.join(dir, 'emptywork');
   mkdirSync(empty);

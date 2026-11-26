@@ -44,7 +44,9 @@ void main() => runKasaneruJob(project.scenes);
         env: {...process.env, KASANERU_JOB: jobFile},
         stdio: ['ignore', 'inherit', 'inherit'],
       });
-      p.on('error', (e) => reject(new Error(e.code === 'ENOENT' ? 'flutter not found. Install Flutter and make sure it is on the PATH (needed for --backend flutter).' : `Cannot run flutter: ${e.message}`)));
+      p.on('error', (e) => reject(e.code === 'ENOENT'
+        ? Object.assign(new Error('flutter not found. Install Flutter and make sure it is on the PATH (needed for --backend flutter).'), {code: 'TOOL_NOT_FOUND'})
+        : new Error(`Cannot run flutter: ${e.message}`)));
       p.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`flutter test exited with ${code}`))));
     });
   } finally {
