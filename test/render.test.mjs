@@ -47,6 +47,7 @@ function lumas(file, {w = 64, h = 64, crop = null} = {}) {
 const near = (actual, expected, tolerance, label) => assert.ok(Math.abs(actual - expected) <= tolerance, `${label}: ${actual.toFixed(1)} is outside ${expected} ±${tolerance}`);
 const sourceFrame = (luma) => Math.round((luma - 20) / 3);
 // Volume per second (RMS, dB).
+// A full-level mono tone comes out at about -21 dB here (-18 dB RMS, less 3 dB for mono going to each side at 0.707x), so "playing" is tested as above -25.
 function loudness(file, seconds) {
   const raw = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-ac', '1', '-ar', '8000', '-f', 'f32le', '-'], {maxBuffer: 1 << 28});
   const samples = new Float32Array(raw.buffer, raw.byteOffset, raw.length / 4);
@@ -181,15 +182,15 @@ test('position offset (offsetX keyframes)', () => {
 
 test('audio position, length, loop, speed, fades, and clip audio', () => {
   const placed = loudness(run({composition: comp(90), layers: [{type: 'video', src: 'gray.png'}], audio: [{src: 'tone.wav', from: 30, durationInFrames: 30}]}).out, 3);
-  assert.ok(placed[0] < -60 && placed[1] > -20 && placed[2] < -60, `plays only during second 1: ${placed.map((v) => v.toFixed(0))}`);
+  assert.ok(placed[0] < -60 && placed[1] > -25 && placed[2] < -60, `plays only during second 1: ${placed.map((v) => v.toFixed(0))}`);
   const looped = loudness(run({composition: comp(150), layers: [{type: 'video', src: 'gray.png'}], audio: [{src: 'tone.wav', loop: true}]}).out, 5);
-  assert.ok(looped.every((v) => v > -20), `loops and plays to the end: ${looped.map((v) => v.toFixed(0))}`);
+  assert.ok(looped.every((v) => v > -25), `loops and plays to the end: ${looped.map((v) => v.toFixed(0))}`);
   const fast = loudness(run({composition: comp(90), layers: [{type: 'video', src: 'gray.png'}], audio: [{src: 'tone.wav', playbackRate: 2}]}).out, 3);
-  assert.ok(fast[0] > -20 && fast[1] < -40, `shrinks to 1 second at 2x: ${fast.map((v) => v.toFixed(0))}`);
+  assert.ok(fast[0] > -25 && fast[1] < -40, `shrinks to 1 second at 2x: ${fast.map((v) => v.toFixed(0))}`);
   const faded = loudness(run({composition: comp(90), layers: [{type: 'video', src: 'gray.png'}], audio: [{src: 'tone.wav', durationInFrames: 60, fadeOut: 30}]}).out, 2);
   assert.ok(faded[1] < faded[0] - 3, `the second half is quieter because of the fade: ${faded.map((v) => v.toFixed(1))}`);
   const fromClip = loudness(run({composition: comp(90), layers: [{type: 'video', clips: [{src: 'src.mp4', from: 30, durationInFrames: 30, volume: 1}]}]}).out, 3);
-  assert.ok(fromClip[0] < -60 && fromClip[1] > -20 && fromClip[2] < -60, `the audio of a clip with volume plays at the same position: ${fromClip.map((v) => v.toFixed(0))}`);
+  assert.ok(fromClip[0] < -60 && fromClip[1] > -25 && fromClip[2] < -60, `the audio of a clip with volume plays at the same position: ${fromClip.map((v) => v.toFixed(0))}`);
   const silent = run({composition: comp(30), layers: [{type: 'video', src: 'src.mp4'}]}).out;
   assert.ok(!execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'stream=codec_type', '-of', 'csv=p=0', silent], {encoding: 'utf8'}).includes('audio'), 'a clip without volume is silent');
 });
@@ -479,7 +480,7 @@ test('automatic ducking (duck) and pitch', () => {
   let crossings = 0;
   for (let i = 1; i < s.length; i++) if (s[i - 1] <= 0 && s[i] > 0) crossings++;
   near(crossings, 880, 40, 'one octave up (440 Hz → 880 Hz)');
-  assert.ok(loudness(high, 2)[1] > -20, 'the length is unchanged (still playing in second 2)');
+  assert.ok(loudness(high, 2)[1] > -25, 'the length is unchanged (still playing in second 2)');
 });
 
 const cli = (...args) => execFileSync('node', [CLI, ...args], {encoding: 'utf8'});
@@ -623,7 +624,7 @@ test('volume keyframes (frame numbers of the whole video, many points, {keyframe
   const video = [{type: 'video', src: 'gray.png'}];
   // Even on a track with from: 30, keyframe frames count from the start of the video.
   const basis = loudness(run({composition: comp(90), layers: video, audio: [{src: 'tone.wav', from: 30, durationInFrames: 60, volume: [[0, 0], [59, 0], [60, 1]]}]}).out, 3);
-  assert.ok(basis[1] < -60 && basis[2] > -20, `silent for frames 30-59, plays from frame 60: ${basis.map((v) => v.toFixed(0))}`);
+  assert.ok(basis[1] < -60 && basis[2] > -25, `silent for frames 30-59, plays from frame 60: ${basis.map((v) => v.toFixed(0))}`);
   // One point per frame (nesting an ffmpeg expression in order from the first keyframe hits the depth limit at around 100 points).
   const many = Array.from({length: 600}, (_, f) => [f, f < 300 ? (f % 2 ? 0.001 : 0.002) : (f % 2 ? 0.9 : 1)]);
   const stepped = loudness(run({composition: comp(600), layers: video, audio: [{src: 'tone.wav', loop: true, volume: many}]}).out, 20);
@@ -635,7 +636,7 @@ test('volume keyframes (frame numbers of the whole video, many points, {keyframe
   assert.equal(keyframeExpr([[5, 2]]), '2');
 });
 
-test('mono audio goes to left and right at 1x each (3 dB louder than ffmpeg -ac 2)', () => {
+test('mono audio goes to left and right at 0.707x each (the same as ffmpeg -ac 2)', () => {
   // Volume of the left channel only (RMS, dB). Mixing back down to mono would bring the mixing coefficients into the result.
   const level = (file) => {
     const raw = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-t', '0.9', '-af', 'pan=mono|c0=c0', '-ar', '8000', '-f', 'f32le', '-'], {maxBuffer: 1 << 28});
@@ -643,10 +644,16 @@ test('mono audio goes to left and right at 1x each (3 dB louder than ffmpeg -ac 
     return 20 * Math.log10(Math.sqrt(x.reduce((a, v) => a + v * v, 0) / x.length) + 1e-9);
   };
   const source = level(path.join(dir, 'tone.wav'));
-  const same = level(run({composition: comp(30), layers: [{type: 'video', src: 'gray.png'}], audio: [{src: 'tone.wav'}]}).out);
-  near(same, source, 0.3, 'each channel is as loud as the original mono');
-  const matched = level(run({composition: comp(30), layers: [{type: 'video', src: 'gray.png'}], audio: [{src: 'tone.wav', volume: 0.7071}]}).out);
-  near(matched, source - 3.01, 0.3, 'multiplying volume by 0.7071 matches -ac 2');
+  const ac2 = path.join(dir, 'tone_ac2.wav');
+  ff('-i', path.join(dir, 'tone.wav'), '-ac', '2', ac2);
+  const manifest = (track) => ({composition: comp(30), layers: [{type: 'video', src: 'gray.png'}], audio: [track]});
+  const mono = level(run(manifest({src: 'tone.wav'})).out);
+  near(mono, source - 3.01, 0.3, 'each channel is 3 dB below the original mono');
+  near(mono, level(ac2), 0.3, 'the same level as ffmpeg -ac 2');
+  // A stereo asset is not changed, so the same sound gives the same result whether the file is mono or stereo.
+  near(level(run(manifest({src: 'tone_ac2.wav'})).out), mono, 0.3, 'the stereo version of the same sound comes out the same');
+  const full = level(run(manifest({src: 'tone.wav', volume: 1.4142})).out);
+  near(full, source, 0.3, 'multiplying volume by 1.4142 puts the original level on each channel');
 });
 
 test('audio bitrate (--audio-bitrate)', () => {

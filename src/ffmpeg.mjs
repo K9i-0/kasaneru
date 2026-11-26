@@ -503,7 +503,9 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
       const ratio = 2 ** (track.pitch / 12);
       chain.push(`asetrate=${Math.round(SAMPLE_RATE * ratio)}`, `aresample=${SAMPLE_RATE}`, ...atempoChain(1 / ratio));
     }
-    chain.push(channels === 1 ? 'pan=stereo|c0=c0|c1=c0' : 'aformat=channel_layouts=stereo');
+    // Mono goes to left and right at 0.707x each (-3 dB, constant power), the same as ffmpeg's own conversion (-ac 2):
+    // the loudness stays that of the source, and a mono voice mixed with stereo music is not 3 dB louder than expected.
+    chain.push(channels === 1 ? `pan=stereo|c0=${Math.SQRT1_2}*c0|c1=${Math.SQRT1_2}*c0` : 'aformat=channel_layouts=stereo');
     if (track.fadeIn) chain.push(`afade=t=in:st=0:d=${sec(track.fadeIn)}`);
     if (track.fadeOut && length !== undefined) chain.push(`afade=t=out:st=${sec(length - track.fadeOut)}:d=${sec(track.fadeOut)}`);
     if (from > 0) chain.push(`adelay=${Math.round((from / fps) * SAMPLE_RATE)}S:all=1`);

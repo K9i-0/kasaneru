@@ -191,7 +191,7 @@ For more elaborate captions, such as per-speaker colors, write them in a `scene`
 
 - **Volume keyframe frames are frame numbers of the whole video** (not counted from the start of the track). With `[[0, 0], [60, 1]]` on a track with `from: 30`, the volume is already 0.5 at frame 30, when it starts playing. Keyframes such as `offsetX` on video layers are counted "from the start of the clip", so the two count differently
 - Any number of keyframes is fine (even one per frame renders). Points that lie on a straight line are dropped automatically
-- **Mono assets go to left and right at 1x each.** This is 3 dB louder than ffmpeg's default conversion (`-ac 2`, 0.707x to each side). When you mix mono voice with stereo BGM, only the voice comes out 3 dB louder than it would with ffmpeg's default conversion (measured: overall -15.6 LUFS → -12.6 LUFS). To match the ffmpeg default, multiply the mono track's `volume` by 0.707 (for keyframes, multiply each value)
+- **Mono assets go to left and right at 0.707x (−3 dB) each.** This is the same as ffmpeg's default conversion (`-ac 2`), and the loudness (LUFS) stays that of the source. The same sound mixes at the same level whether the file is mono or stereo. To put the original amplitude on each channel, multiply that track's `volume` by 1.414 (for keyframes, multiply each value). Up to 0.0.5 mono went in at 1x each, so mono assets came out 3 dB louder
 
 Keyframes are `{"keyframes": [[frame, value], ...], "easing": "linear"}`. `easing` is one of `linear` `inCubic` `outCubic` `inOutCubic`.
 
@@ -265,7 +265,6 @@ Keyframes are `{"keyframes": [[frame, value], ...], "easing": "linear"}`. `easin
 - Transition effects between clips, such as wipes (build them from fades and position keyframes)
 - Output with transparency (`.mov` / `.webm` are opaque)
 - Flutter support for the `captions` layer, per-speaker styles
-- A switch to bring mono assets in at 0.707x (for now, multiply `volume` by hand)
 - Waiting for assets other than `<img>` (such as CSS background images) to load before capturing; detecting missing assets in the Flutter backend
 - `--frames` still composites video layers outside the range once and trims afterwards (pictures are drawn only for the range)
 - Windows and Linux (it has only been run on macOS)
