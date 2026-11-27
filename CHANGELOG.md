@@ -2,6 +2,16 @@
 
 All notable changes to `kasaneru` are documented in this file.
 
+## [0.1.1] - 2026-11-27
+
+### Added
+
+- `inspect` now includes `audio.durationSeconds` and warns when the audio stream duration differs from the video duration by 0.5 seconds or more.
+
+### Fixed
+
+- Audio tracks with `trimBefore` and `from > 0` no longer make ffmpeg's `amix` cut off the mixed audio at the delayed track's start time (rebuilds sample-accurate timestamps from 0 right after `adelay`).
+
 ## [0.1.0] - 2026-11-26
 
 ### Changed
