@@ -820,3 +820,44 @@ test('a range of a long composition with many audio tracks finishes and has the 
     assert.ok(db < -60, `--frames ${a}-${b}: difference from the full render is ${db.toFixed(1)} dB`);
   }
 });
+
+// adelay after atrim/asetpts can emit leading silence frames with NOPTS/overflowed PTS, which made amix cut off the mix at the first track's start time.
+test('audio: first track with trimBefore and from > 0 mixed with a from 0 track keeps the full duration', () => {
+  const sub = path.join(dir, 'adelay_pts');
+  mkdirSync(sub, {recursive: true});
+  ff('-f', 'lavfi', '-i', 'sine=frequency=660:duration=4:sample_rate=44100', '-ac', '2', path.join(sub, 'late.wav'));
+  ff('-f', 'lavfi', '-i', 'sine=frequency=330:duration=8:sample_rate=44100', '-ac', '2', '-c:a', 'libmp3lame', path.join(sub, 'bgm.mp3'));
+  const N = FPS * 6;
+  const manifest = {
+    composition: comp(N),
+    background: '#203040',
+    layers: [{type: 'video', src: 'gray.png'}],
+    audio: [
+      {src: 'adelay_pts/late.wav', from: FPS * 2, trimBefore: FPS / 2, durationInFrames: FPS * 3, volume: 0.5},
+      {src: 'adelay_pts/bgm.mp3', from: 0, durationInFrames: N, volume: 0.2},
+    ],
+  };
+  const {out} = run(manifest, [], {backend: 'none'});
+  const info = JSON.parse(cli('inspect', out));
+  assert.equal(info.warnings.length, 0, `unexpected warnings: ${info.warnings.join('; ')}`);
+  near(info.audio.durationSeconds, 6, 0.1, 'audio keeps full 6 s duration');
+  const samples = pcm(out);
+  const perSec = 48000 * 2;
+  const rmsAt = (sec) => {
+    const slice = samples.subarray(sec * perSec, (sec + 1) * perSec);
+    let s2 = 0;
+    for (let k = 0; k < slice.length; k++) s2 += slice[k] * slice[k];
+    return Math.sqrt(s2 / slice.length);
+  };
+  assert.ok(rmsAt(0) > 0.01, `bgm audible at 0-1s (rms=${rmsAt(0).toFixed(4)})`);
+  assert.ok(rmsAt(3) > rmsAt(0) * 1.5, `delayed track audible at 3-4s (rms3=${rmsAt(3).toFixed(4)}, rms0=${rmsAt(0).toFixed(4)})`);
+  assert.ok(rmsAt(5) > 0.01, `bgm still audible at 5-6s (rms=${rmsAt(5).toFixed(4)})`);
+
+  // inspect warns when a video's audio stream ends well before the video stream.
+  const shortA = path.join(sub, 'short.m4a');
+  const mismatched = path.join(sub, 'mismatched.mp4');
+  ff('-i', out, '-vn', '-t', '2', '-c:a', 'aac', shortA);
+  ff('-i', out, '-i', shortA, '-map', '0:v', '-map', '1:a', '-c', 'copy', mismatched);
+  const bad = JSON.parse(cli('inspect', mismatched));
+  assert.ok(bad.warnings.some((w) => w.includes('does not match the video duration')), `expected mismatch warning, got: ${bad.warnings.join('; ')}`);
+});

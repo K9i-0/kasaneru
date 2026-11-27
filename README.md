@@ -39,7 +39,7 @@ node bin/kasaneru.mjs inspect out/basic.mp4
 | `check <manifest>` | Lists every error in the manifest, with its location, without rendering (JSON; exit code 1 if there are errors) |
 | `render <manifest> -o <mp4>` | Renders. Runs the same validation as `check` first and does not render if there are errors |
 | `still <manifest> --frame N -o <png>` | Renders a single frame. Fast, because it draws only the pictures that frame needs |
-| `inspect <video>` | Reports duration, frame count, and volume, and whether the first frame is dark or the audio is clipping |
+| `inspect <video>` | Reports duration, frame count, and volume, and whether the first frame is dark, the audio is clipping, or the audio duration does not match the video |
 | `inspect <video> --deep` | In addition to the above, looks for single frames with a broken picture (blank white, garbled) (`suspectFrames`). The first and last frames can only be compared with one neighbor, so when they differ greatly from it they are listed as a weak warning (`edgeFrames`; this cannot be told apart from a cut, so check by eye) |
 | `sheet <video> -o <png>` | Makes a contact sheet of frames for review. `--frames 0,120,240`, `--every N`, `--manifest <manifest>` (automatically picks frames just before and after clip and caption changes), `--cols N` (columns, default 4) |
 | `srt <manifest> -o <srt>` | Writes the captions as SRT (from `captions` layers; `--key props.captions` can point at another location) |

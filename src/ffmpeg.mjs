@@ -508,7 +508,8 @@ export function buildFfmpegArgs({manifest, manifestDir, scenes, out, encoder, cr
     chain.push(channels === 1 ? `pan=stereo|c0=${Math.SQRT1_2}*c0|c1=${Math.SQRT1_2}*c0` : 'aformat=channel_layouts=stereo');
     if (track.fadeIn) chain.push(`afade=t=in:st=0:d=${sec(track.fadeIn)}`);
     if (track.fadeOut && length !== undefined) chain.push(`afade=t=out:st=${sec(length - track.fadeOut)}:d=${sec(track.fadeOut)}`);
-    if (from > 0) chain.push(`adelay=${Math.round((from / fps) * SAMPLE_RATE)}S:all=1`);
+    // adelay after atrim/asetpts can emit leading silence frames with NOPTS/overflowed PTS, which makes amix cut off early; rebuild sample-accurate timestamps from 0.
+    if (from > 0) chain.push(`adelay=${Math.round((from / fps) * SAMPLE_RATE)}S:all=1`, 'asetpts=NB_CONSUMED_SAMPLES/SR/TB');
     const volume = track.volume ?? 1;
     // Keyframes can be written as [[frame, value], ...] or as {keyframes, easing}. Frames are frame numbers of the whole video (evaluated after adelay).
     const points = Array.isArray(volume) ? volume : volume?.keyframes;

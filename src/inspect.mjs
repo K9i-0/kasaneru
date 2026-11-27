@@ -47,7 +47,16 @@ export function inspectVideo(file, {deep = false} = {}) {
     const log = spawnSync('ffmpeg', ['-hide_banner', '-i', file, '-vn', '-af', 'volumedetect', '-f', 'null', '-'], {encoding: 'utf8'}).stderr;
     const mean = Number(/mean_volume: ([-\d.]+)/.exec(log)?.[1]);
     const max = Number(/max_volume: ([-\d.]+)/.exec(log)?.[1]);
-    result.audio = {codec: a.codec_name, sampleRate: Number(a.sample_rate), channels: a.channels, meanVolumeDb: mean, maxVolumeDb: max};
+    const aDur = Number(a.duration);
+    result.audio = {
+      codec: a.codec_name, sampleRate: Number(a.sample_rate), channels: a.channels,
+      ...(Number.isFinite(aDur) ? {durationSeconds: +aDur.toFixed(3)} : {}),
+      meanVolumeDb: mean, maxVolumeDb: max,
+    };
+    const vDur = Number(v?.duration);
+    if (Number.isFinite(vDur) && Number.isFinite(aDur) && Math.abs(vDur - aDur) >= 0.5) {
+      warnings.push(`The audio duration (${aDur.toFixed(2)} s) does not match the video duration (${vDur.toFixed(2)} s)`);
+    }
     if (max >= -0.1) warnings.push(`The audio may be clipping (max ${max} dB). Consider master.limiter`);
     if (mean < -40) warnings.push(`The audio is nearly silent (mean ${mean} dB)`);
   }

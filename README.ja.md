@@ -39,7 +39,7 @@ node bin/kasaneru.mjs inspect out/basic.mp4
 | `check <manifest>` | 書き出さずに、manifestの誤りを場所つきで全部挙げる（JSON。誤りがあれば終了コード1） |
 | `render <manifest> -o <mp4>` | 書き出す。先に `check` と同じ検証をして、誤りがあれば書き出さない |
 | `still <manifest> --frame N -o <png>` | 1コマだけ書き出す。その1コマに要る絵しか描かないので速い |
-| `inspect <動画>` | 尺・コマ数・音量と、先頭コマが暗くないか・音が振り切れていないかを報告する |
+| `inspect <動画>` | 尺・コマ数・音量と、先頭コマが暗くないか・音が振り切れていないか・音声と動画の尺がずれていないかを報告する |
 | `inspect <動画> --deep` | 上に加えて、1コマだけ壊れた絵（真っ白・崩れ）を探す（`suspectFrames`）。先頭と最後のコマは片側としか比べられないので、隣と大きく違うときに弱い注意として挙げる（`edgeFrames`。カットとは区別できないので、見て確かめる） |
 | `sheet <動画> -o <png>` | 確認用のコマ一覧を作る。`--frames 0,120,240`、`--every N`、`--manifest <manifest>`（クリップや字幕の切り替わりの前後を自動で選ぶ）、`--cols N`（列数、既定は4） |
 | `srt <manifest> -o <srt>` | 字幕をSRTにする（`captions` の層から。`--key props.captions` で場所を指定もできる） |
